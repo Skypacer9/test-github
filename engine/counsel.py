@@ -165,7 +165,10 @@ FIGURE_UTTERANCE_BANKS: dict[str, tuple[str, ...]] = {
     "king_you": (
         "The throne feels thin — patrons glance past me.",
         "I inherit a web I can barely hold; Qin weather grows loud.",
-        "Weak seal, loud fear — still Chu, still not Legalist extras.",
+        "My seal is new; the guest-houses still ask for Kaolie's name.",
+        "Chunshen's ledger weighs more than my word tonight.",
+        "I keep Chu face by listening first — fear of Qin already sits here.",
+        "Succession is not strength; it is a borrowed hall I must fill.",
     ),
     "chunshen": (
         "Guest-houses remember who paid the last banquet — and who didn't.",
@@ -370,12 +373,20 @@ def _aphorism(
     home: str = "",
     role: str | None = None,
 ) -> str:
-    """Pick from role+ideology+figure bank — hashed by figure_id + role + OCEAN + home + tag."""
+    """Pick from role+ideology+figure bank — hashed by figure_id + role + OCEAN + home + tag.
+
+    Prefer figure-specific overlay (~2/3) so King You / Kaolie / Li Si stay distinct.
+    """
     meta = get_figure(fid)
     role = role or _speech_role_for(meta, fid=fid)
     home = home or str((meta or {}).get("home") or "")
+    overlay = tuple(FIGURE_UTTERANCE_BANKS.get(str(fid or "").strip().lower()) or ())
     bank = _figure_bank(fid, home=home, role=role)
     o = ocean or {}
+    # Bias toward figure-unique lines when available
+    pick_key = _seed_int(world.tick, fid, tag, "figbias")
+    if overlay and (pick_key % 3) != 0:
+        bank = overlay
     key = (
         world.tick,
         fid,
