@@ -36,8 +36,10 @@ CULTURAL_STATES = (
 
 
 def chronicle_backend_name() -> str:
+    from .llm_gate import llm_env_enabled
+
     key = (os.environ.get("WS_CHRONICLE_API_KEY") or os.environ.get("WS_COUNSEL_API_KEY") or "").strip()
-    return "llm" if key else "stub"
+    return "llm" if llm_env_enabled() and key else "stub"
 
 
 def _seed_int(*parts: Any) -> int:

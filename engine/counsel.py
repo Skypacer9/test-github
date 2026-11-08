@@ -231,7 +231,9 @@ del _line, _low, _fid
 
 
 def counsel_backend_name() -> str:
-    return "llm" if (os.environ.get("WS_COUNSEL_API_KEY") or "").strip() else "stub"
+    from .llm_gate import llm_env_enabled
+
+    return "llm" if llm_env_enabled() and (os.environ.get("WS_COUNSEL_API_KEY") or "").strip() else "stub"
 
 
 def _seed_int(*parts: Any) -> int:

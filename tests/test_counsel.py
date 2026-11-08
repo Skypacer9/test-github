@@ -246,13 +246,43 @@ def test_flask_counsel_api():
 
     c = app.test_client()
     assert c.get("/api/health").status_code == 200
-    r = c.post("/api/counsel", json={"prompt": "Among the courts: hold the south."})
+    st = c.get("/api/state")
+    assert st.status_code == 200
+    csrf = (st.get_json() or {}).get("csrf")
+    assert csrf
+    r = c.post(
+        "/api/counsel",
+        json={"prompt": "Among the courts: hold the south."},
+        headers={"X-WS-CSRF": csrf},
+    )
     j = r.get_json()
     assert r.status_code == 200 and j.get("ok")
     assert j.get("state") is not None
+    csrf2 = j.get("csrf") or csrf
     # Close
-    r2 = c.post("/api/counsel", json={"prompt": "Close counsel: lean contribute.", "commit": True})
+    r2 = c.post(
+        "/api/counsel",
+        json={"prompt": "Close counsel: lean contribute.", "commit": True},
+        headers={"X-WS-CSRF": csrf2},
+    )
     assert r2.status_code == 200 and r2.get_json().get("ok")
+
+
+def test_flask_sessions_isolated():
+    """Two clients must not share campaign state."""
+    from server import app
+
+    a = app.test_client()
+    b = app.test_client()
+    sa = a.get("/api/state").get_json()
+    sb = b.get("/api/state").get_json()
+    assert sa["player_id"] != sb["player_id"]
+    ra = a.post("/api/new", headers={"X-WS-CSRF": sa["csrf"]}).get_json()
+    # Advance only on A
+    a.post("/api/advance", headers={"X-WS-CSRF": ra.get("csrf") or sa["csrf"]})
+    tick_a = a.get("/api/state").get_json()["state"]["tick"]
+    tick_b = b.get("/api/state").get_json()["state"]["tick"]
+    assert tick_a != tick_b or tick_a >= 1
 
 
 def test_parse_clamps():

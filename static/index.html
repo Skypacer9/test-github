@@ -857,6 +857,18 @@
     }
     function setText(id, t) { const el = $(id); if (el) el.textContent = t; }
 
+    /** Escape untrusted strings before any HTML interpolation. */
+    function esc(s) {
+      return String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    let csrfToken = "";
+
     function fmtFund(n) {
       const v = Number(n);
       if (!Number.isFinite(v)) return "—";
@@ -933,7 +945,7 @@
         const ann = !!ag.annexed || Number(ag.viability) <= 0;
         const name = ag.name || id;
         const label = ann ? (name + " (annexed)") : name;
-        return `<option value="${id}"${ann ? " disabled" : ""}>${label}</option>`;
+        return `<option value="${esc(id)}"${ann ? " disabled" : ""}>${esc(label)}</option>`;
       }).join("");
       const prevOk = prev && sel.querySelector(`option[value="${prev}"]:not([disabled])`);
       if (prevOk) sel.value = prev;
@@ -953,8 +965,8 @@
       if (Number.isFinite(n)) w = n <= 1.0001 ? n * 100 : Math.min(100, n);
       w = Math.max(0, Math.min(100, w));
       const bid = idPrefix + "-" + key;
-      return `<div class="meter" data-k="${key}"><label>${label} <span>${p}%</span></label>` +
-        `<div class="bar"><i id="${bid}" style="width:${w}%"></i></div></div>`;
+      return `<div class="meter" data-k="${esc(key)}"><label>${esc(label)} <span>${esc(p)}%</span></label>` +
+        `<div class="bar"><i id="${esc(bid)}" style="width:${w}%"></i></div></div>`;
     }
 
     function switchTab(name) {
@@ -1011,12 +1023,14 @@
       const locked = mode === "talk" && f.talkable === false;
       const on = f.id === selectedId ? " on" : "";
       const lockCls = locked ? " locked" : "";
-      const st = locked ? (f.note || f.status || "locked") : (f.home || "");
       const status = f.status === "not_yet_risen" ? "not yet risen" : (locked ? "locked" : "");
-      return `<button type="button" class="portrait-card${on}${lockCls}" role="option" data-id="${f.id}" data-talkable="${f.talkable !== false}" aria-label="${f.short || f.id}">` +
-        `<img src="${f.portrait || ("/static/portraits/" + f.id + ".svg")}" alt="" />` +
-        `<div class="pname">${f.short || f.name || f.id}</div>` +
-        (status ? `<div class="pstatus">${status}</div>` : "") +
+      const pid = esc(f.id || "");
+      const label = esc(f.short || f.name || f.id || "");
+      const src = esc(f.portrait || ("/static/portraits/" + (f.id || "kaolie") + ".svg"));
+      return `<button type="button" class="portrait-card${on}${lockCls}" role="option" data-id="${pid}" data-talkable="${f.talkable !== false}" aria-label="${label}">` +
+        `<img src="${src}" alt="" />` +
+        `<div class="pname">${label}</div>` +
+        (status ? `<div class="pstatus">${esc(status)}</div>` : "") +
         `</button>`;
     }
 
@@ -1119,7 +1133,7 @@ function renderProfile(prof) {
       $("prof-packets").innerHTML = packets.map((p) => {
         const w = weights[p];
         const pctW = Number.isFinite(Number(w)) ? ` ${Math.round(Number(w) * 100)}%` : "";
-        return `<span class="chip">${p}${pctW}</span>`;
+        return `<span class="chip">${esc(p)}${esc(pctW)}</span>`;
       }).join("") || `<span class="chip">none</span>`;
 
       const weightEntries = Object.entries(weights).sort((a, b) => Number(b[1]) - Number(a[1]));
@@ -1130,7 +1144,7 @@ function renderProfile(prof) {
       const trustRows = Object.entries(dyadic).sort((a, b) => a[0].localeCompare(b[0])).slice(0, 12);
       $("prof-trust").innerHTML = trustRows.length
         ? trustRows.map(([k, v]) =>
-            `<span>${k}</span><span class="v">${Number(v).toFixed(2)}</span>`).join("")
+            `<span>${esc(k)}</span><span class="v">${esc(Number(v).toFixed(2))}</span>`).join("")
         : `<span>none</span><span class="v">—</span>`;
     }
 
@@ -1202,12 +1216,16 @@ function renderProfile(prof) {
 
     function renderLog(chat, freshCount) {
       const box = $("log");
+      if (!box) return;
       const rows = chat || [];
       const startFresh = Math.max(0, rows.length - (freshCount || 0));
-      box.innerHTML = rows.map((m, i) => {
-        const cls = i >= startFresh ? "entry fresh" : "entry";
-        return `<div class="${cls}">${stripMd(m.content)}</div>`;
-      }).join("");
+      box.replaceChildren();
+      rows.forEach((m, i) => {
+        const div = document.createElement("div");
+        div.className = i >= startFresh ? "entry fresh" : "entry";
+        div.textContent = stripMd(m && m.content);
+        box.appendChild(div);
+      });
       box.scrollTop = box.scrollHeight;
     }
 
@@ -1247,19 +1265,25 @@ function renderProfile(prof) {
       const chips = (cr.prompt_chips) || (s && s.counsel_prompt_chips) || [];
       const box = $("counsel-chips");
       if (box) {
-        box.innerHTML = (chips || []).slice(0, 2).map((c) =>
-          `<button type="button" class="chip-btn" data-chip="${String(c).replace(/"/g, "&quot;")}">${c}</button>`
-        ).join("");
-        box.querySelectorAll("button.chip-btn").forEach((btn) => {
+        box.replaceChildren();
+        (chips || []).slice(0, 2).forEach((c) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "chip-btn";
+          const text = String(c ?? "");
+          btn.dataset.chip = text;
+          btn.textContent = text;
           btn.onclick = () => {
             const inp = $("counsel-prompt");
-            if (inp) inp.value = btn.getAttribute("data-chip") || btn.textContent || "";
+            if (inp) inp.value = btn.dataset.chip || btn.textContent || "";
           };
+          box.appendChild(btn);
         });
       }
     }
 
     function applyPayload(data, freshCount) {
+      if (data && data.csrf) csrfToken = data.csrf;
       const s = data.state || {};
       const agents = s.agents || {};
       setText("year", s.year ?? "—");
@@ -1378,11 +1402,22 @@ function renderProfile(prof) {
     }
 
     async function api(path, opts) {
+      const method = ((opts && opts.method) || "GET").toUpperCase();
+      const headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        ...((opts && opts.headers) || {}),
+      };
+      if (method !== "GET" && method !== "HEAD" && csrfToken) {
+        headers["X-WS-CSRF"] = csrfToken;
+      }
       const res = await fetch(path, {
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        credentials: "same-origin",
         ...opts,
+        headers,
       });
       const data = await res.json().catch(() => ({}));
+      if (data && data.csrf) csrfToken = data.csrf;
       if (!res.ok || data.ok === false) {
         throw new Error(data.error || ("HTTP " + res.status));
       }
