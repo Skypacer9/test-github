@@ -233,8 +233,15 @@ def test_tick_wires_counsel():
 def test_chips_and_backend_projection():
     w = new_world()
     chips = suggest_prompt_chips(w)
-    assert 2 <= len(chips) <= 3
+    assert 1 <= len(chips) <= 2
     assert all("God" not in c and "god" not in c for c in chips)
+    assert all("Legalist haste" not in c for c in chips)
+    # Focus chips should match the figure's court, not a generic slogan
+    chu = suggest_prompt_chips(w, figure_id="chunshen")
+    assert 1 <= len(chu) <= 2
+    assert any("patron" in c.lower() or "broker" in c.lower() or "levy" in c.lower() or "spoke" in c.lower() or "receipt" in c.lower() for c in chu)
+    qin = suggest_prompt_chips(w, figure_id="zhaoxiang")
+    assert any("pressure" in c.lower() or "court" in c.lower() or "unity" in c.lower() or "people" in c.lower() for c in qin)
     s = initial_state()
     assert "counsel_log" in s and "counsel_prompt_chips" in s
     # No player ocean in projection

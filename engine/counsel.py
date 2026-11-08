@@ -863,38 +863,84 @@ def _utter(
 
 
 
-def suggest_prompt_chips(world: Any, n: int = 2) -> list[str]:
-    """Short field-pressure chips (decluttered — ≤2). Not a dialogue tree."""
+def suggest_prompt_chips(world: Any, n: int = 2, figure_id: str | None = None) -> list[str]:
+    """Short field-pressure chips (≤2) keyed to focus figure + live field weather.
+
+    Player speaks as collective field pressure — chips should be plain pressure lines
+    the figure can answer, not cryptic slogans or mismatched court jargon.
+    """
     sess = _ensure_session(world)
     closing = sess.get("open") and int(sess.get("exchanges", 0)) >= DIALOGUE_MIN - 1
-    focus = (sess.get("figure_id") or "").strip()
-    short = {
-        "kaolie": "Kaolie", "king_you": "You", "chunshen": "Chunshen",
-        "chu_nobility": "Nobility", "zhaoxiang": "Zhaoxiang",
-        "ying_zheng": "Zheng", "li_si": "Li Si", "king_jian": "Jian",
-    }.get(focus, focus or "them")
+    focus = (figure_id or sess.get("figure_id") or "").strip().lower()
+    fig = get_figure(focus) if focus else None
+    home = str((fig or {}).get("home") or "")
+    role = _speech_role_for(fig, fid=focus) if fig else ""
+    ideo = _ideology_for(fig, home=home, fid=focus) if fig else ""
+    ag = world.agents.get(home) if home else None
+    qin_p = float(getattr(world, "qin_pressure", 0.0) or 0.0)
+    cohesion = float(getattr(getattr(world, "meso", None), "cohesion", 50.0) or 50.0)
+    fear = float(getattr(getattr(ag, "state", None), "fear_of_qin", 0.0) or 0.0) if ag else 0.0
+    resent = float(getattr(getattr(ag, "state", None), "resentment", 0.0) or 0.0) if ag else 0.0
+
     if closing:
         pool = ["Commit: contribute.", "Commit: withhold.", "Close counsel."]
-    elif focus:
-        pool = [
-            f"Press {short}: hold the line.",
-            f"Ask {short}: grain before haste?",
-            f"Challenge {short}: isolation or stand?",
-        ]
+    elif focus and fig:
+        pool = []
+        # Role-shaped pressure (what you ask this person to weigh)
+        if role == "ruler":
+            pool.append("Hold your court's face without rushing the map.")
+            pool.append("Tell me what unity costs your people this season.")
+        elif role == "minister":
+            pool.append("Broker the next move with receipts, not banquet vows.")
+            pool.append("Where should the levy and guest-lists lean?")
+        elif role == "retainer":
+            pool.append("Will your clients still follow if the hub goes hungry?")
+            pool.append("Name the unpaid debt that still binds the spoke.")
+        else:
+            pool.append("Read the field: fittings and fords before banners.")
+            pool.append("What march order still makes sense this quarter?")
+
+        # Ideology / home-shaped — never push Legalist framing onto Chu
+        if ideo == "chu_patronage_tianxia":
+            pool.append("Keep the patron web intact under Qin weather.")
+            if fear >= 0.45 or qin_p >= 55:
+                pool.append("Qin pressure is loud — how do Chu spokes answer?")
+        elif ideo == "qin_legalism":
+            pool.append("Press staged pressure — patience over thunder.")
+            if cohesion < 45:
+                pool.append("Anti-Qin cohesion is soft. Exploit or wait?")
+        elif ideo == "qi_mercantile":
+            pool.append("Qi walls still hold — trade caution for time?")
+            pool.append("Isolation buys a season. What does it cost next?")
+        else:
+            pool.append("Speak to the field as it stands — no destiny script.")
+
+        if resent >= 0.5:
+            pool.append("Resentment is hot here. Cool it, or let it cut?")
+        if getattr(ag, "desperate", False):
+            pool.append("Your court is desperate — what still can be saved?")
     else:
+        # Among-courts / no focus: general field pressure, still plain English
         pool = [
-            "Hold the southern line.",
-            "Grain before Legalist haste.",
-            "Challenge Qi isolation.",
+            "Hold the coalition line without forcing a single ending.",
+            "Ask what grain and trust still buy this quarter.",
         ]
-    ranked = sorted(pool, key=lambda s: _seed_int(world.tick, sess.get("exchanges", 0), s))
-    out = []
-    for s in ranked:
-        if s not in out:
-            out.append(s)
-        if len(out) >= max(1, min(2, n)):
-            break
-    return out
+        if qin_p >= 55:
+            pool.append("Qin pressure rises — who still answers the field?")
+        if cohesion < 45:
+            pool.append("Cohesion frays. Repair the spokes, or accept the split?")
+        qi = world.agents.get("qi")
+        if qi is not None and not getattr(qi, "annexed", False):
+            pool.append("Qi stays behind walls — press them, or leave them?")
+
+    # Dedupe while preserving sense; rank by tick so chips rotate
+    seen: list[str] = []
+    for s in pool:
+        s = _strip_ui(s)[:72]
+        if s and s not in seen:
+            seen.append(s)
+    ranked = sorted(seen, key=lambda s: _seed_int(world.tick, sess.get("exchanges", 0), focus or "-", s))
+    return ranked[: max(1, min(2, n))]
 
 
 def _ensure_beliefs(world: Any) -> dict[str, dict[str, float]]:
@@ -1386,7 +1432,7 @@ def _apply_close(world: Any, rows: list[dict[str, Any]], mode: str, err: str | N
         "tips": tips,
         "applied_belief": belief or None,
         "applied_breakthrough": breakthrough or None,
-        "prompt_chips": suggest_prompt_chips(world),
+        "prompt_chips": suggest_prompt_chips(world, figure_id=(rows[0].get("figure_id") if rows else None)),
         "exchange": 0,
         "exchanges_left": 0,
         "error": err,
@@ -1425,7 +1471,7 @@ def run_counsel_round(
             "closed": True,
             "error": "Figure not available (era-locked or home annexed)",
             "figure_id": focus,
-            "prompt_chips": suggest_prompt_chips(world),
+            "prompt_chips": suggest_prompt_chips(world, figure_id=focus),
         }
 
     if not sess.get("open"):
@@ -1436,7 +1482,7 @@ def run_counsel_round(
                 "rows": [],
                 "closed": True,
                 "error": "Counsel budget spent this quarter — Advance to reset",
-                "prompt_chips": suggest_prompt_chips(world),
+                "prompt_chips": suggest_prompt_chips(world, figure_id=focus),
             }
         world.counsel_actions_left = max(0, left - 1)
         sess["open"] = True
@@ -1483,7 +1529,7 @@ def run_counsel_round(
         "tips": None,
         "applied_belief": None,
         "applied_breakthrough": None,
-        "prompt_chips": suggest_prompt_chips(world),
+        "prompt_chips": suggest_prompt_chips(world, figure_id=focus),
         "exchange": ex,
         "exchanges_left": max(0, cap - ex),
         "figure_id": focus,

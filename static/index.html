@@ -72,13 +72,49 @@
     }
     .meta strong { color: var(--ws-gold); font-family: Cinzel, serif; }
 
+    .field-panel { margin-bottom: 1rem; }
+    .field-panel .factions { margin-bottom: 0.55rem; }
+
     .grid {
       display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
+      grid-template-columns: 0.95fr 1.05fr;
       gap: 1rem;
+      align-items: start;
     }
     @media (max-width: 880px) {
       .grid { grid-template-columns: 1fr; }
+    }
+
+    .talk-side {
+      cursor: pointer;
+    }
+    .talk-side:focus-visible {
+      outline: 2px solid var(--ws-electric);
+      outline-offset: 2px;
+    }
+    .talk-side .profile-hint {
+      margin-top: 0.35rem;
+      font-size: 0.58rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ws-electric);
+    }
+    .btn-open-profile {
+      margin-top: 0.35rem;
+      width: 100%;
+      font-size: 0.68rem;
+      padding: 0.28rem 0.4rem;
+      border-radius: 8px;
+      border: 1px solid rgba(92,200,232,0.45);
+      background: rgba(92,200,232,0.1);
+      color: var(--ws-paper);
+      cursor: pointer;
+      font-family: Cinzel, serif;
+      letter-spacing: 0.06em;
+    }
+    .btn-open-profile:hover {
+      border-color: var(--ws-electric);
+      background: rgba(92,200,232,0.2);
     }
 
     .panel {
@@ -660,42 +696,102 @@
       </div>
     </header>
 
+    <section class="panel field-panel">
+      <h2>Field · Seven States</h2>
+      <div class="factions" id="factions">
+        <!-- cards filled by JS for Qin Chu Qi Zhao Han Wei Yan -->
+      </div>
+
+      <div class="meso">
+        <div class="stat">Qin pressure <b id="qin-pressure">—</b></div>
+        <div class="stat">Cohesion <b id="cohesion">—</b></div>
+        <div class="stat">Identity <b id="shared">—</b></div>
+        <div class="stat">Trust <b id="trust-line">chu→qi —</b></div>
+        <div class="stat">Quorum <span class="pill" id="quorum">—</span></div>
+        <div class="stat">Chu sync <b id="chu-sync">—</b></div>
+        <div class="stat">Mil adv <b id="m2-line">—</b></div>
+      </div>
+      <div class="meso meso-secondary" aria-label="Secondary meters">
+        <div class="stat">Cascade <span class="pill" id="cascade">—</span></div>
+        <div class="stat">Famine / levy <b id="m1-line">—</b></div>
+        <div class="stat">Sat / manpower <b id="demo-line">—</b></div>
+      </div>
+      <div class="who">Who vs Qin: <em id="who-vs">—</em></div>
+      <div class="who" id="pathway-reading-wrap" style="display:none">Reading: <em id="pathway-reading">—</em></div>
+      <div class="ended" id="ended"></div>
+    </section>
+
     <div class="grid">
-      <section class="panel">
-        <h2>Field · Seven States</h2>
-        <div class="factions" id="factions">
-          <!-- cards filled by JS for Qin Chu Qi Zhao Han Wei Yan -->
+      <section class="panel" id="panel-quarterly" aria-label="Quarterly log">
+        <h2>Quarterly log</h2>
+        <div class="dialogue-box">
+          <div class="speaker" id="dlg-speaker">Chronicler</div>
+          <div class="line" id="dlg-line">Connecting to the field…</div>
+        </div>
+        <div class="log" id="log" aria-live="polite"></div>
+
+        <div class="actions">
+          <button class="cmd primary" id="btn-advance" type="button">Advance Quarter</button>
+          <button class="cmd" id="btn-alliance" type="button">Attempt Alliance</button>
+          <button class="cmd danger" id="btn-new" type="button">New Run</button>
+
+          <div class="intervene-row">
+            <span class="label">Intervene</span>
+            <label class="chk"><input type="checkbox" id="t-qin" value="qin" /> Qin</label>
+            <label class="chk"><input type="checkbox" id="t-chu" value="chu" checked /> Chu</label>
+            <label class="chk"><input type="checkbox" id="t-qi" value="qi" /> Qi</label>
+            <button class="cmd" id="btn-intervene" type="button">Intervene</button>
+          </div>
+          <div class="save-row">
+            <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase">Campaign</span>
+            <button class="cmd" id="btn-save" type="button">Save</button>
+            <button class="cmd" id="btn-load" type="button">Load</button>
+            <input id="load-file" type="file" accept="application/json,.json" />
+          </div>
+        </div>
+        <div class="status" id="status"></div>
+        <div class="player-invest">
+          <div class="player-purse">Player purse — Political Capital <b id="pc-val">100</b> · Treasury <b id="pt-val">100</b></div>
+          <div class="player-purse">Alliance joint fund — Grain <b id="af-g">0</b> · Treasury <b id="af-t">0</b></div>
+          <div class="player-purse">Actions this quarter — Invest <b id="invest-left">1</b>/1 · Alliance <b id="alliance-left">1</b>/1 · Intervene <b id="intervene-left">1</b>/1 · Fund purposes <b id="af-left">4</b>/4</div>
+          <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase">Invest</span>
+          <select id="invest-target" aria-label="Target state">
+            <option value="chu">Chu</option>
+            <option value="qi">Qi</option>
+            <option value="zhao">Zhao</option>
+            <option value="han">Han</option>
+            <option value="wei">Wei</option>
+            <option value="yan">Yan</option>
+          </select>
+          <button class="cmd" id="btn-fund" type="button">Fund Military</button>
+          <button class="cmd" id="btn-grain" type="button">Send Grain</button>
+          <button class="cmd" id="btn-mediate" type="button">Broker Mediation</button>
+          <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%;margin-top:0.25rem">Alliance fund spend</span>
+          <button class="cmd" id="btn-af-tech" type="button">Tech</button>
+          <button class="cmd" id="btn-af-agri" type="button">Agriculture</button>
+          <button class="cmd" id="btn-af-build" type="button">Construction</button>
+          <button class="cmd" id="btn-af-mil" type="button">Military</button>
         </div>
 
-        <div class="meso">
-          <div class="stat">Qin pressure <b id="qin-pressure">—</b></div>
-          <div class="stat">Cohesion <b id="cohesion">—</b></div>
-          <div class="stat">Identity <b id="shared">—</b></div>
-          <div class="stat">Trust <b id="trust-line">chu→qi —</b></div>
-          <div class="stat">Quorum <span class="pill" id="quorum">—</span></div>
-          <div class="stat">Chu sync <b id="chu-sync">—</b></div>
-          <div class="stat">Mil adv <b id="m2-line">—</b></div>
+        <div class="counsel-box" id="chronicle-box">
+          <div class="clabel">Cultural chronicle <span class="mode-badge" id="chronicle-mode">stub</span></div>
+          <textarea id="chronicle-log" readonly placeholder="Wry seasonal readings — one gloss among several, not destiny…"></textarea>
         </div>
-        <div class="meso meso-secondary" aria-label="Secondary meters">
-          <div class="stat">Cascade <span class="pill" id="cascade">—</span></div>
-          <div class="stat">Famine / levy <b id="m1-line">—</b></div>
-          <div class="stat">Sat / manpower <b id="demo-line">—</b></div>
+        <div class="player-log-wrap">
+          <label for="player-log">Player Log · Shadow Actions</label>
+          <textarea id="player-log" readonly placeholder="Consequence lines and shadow attacks appear here…"></textarea>
         </div>
-        <div class="who">Who vs Qin: <em id="who-vs">—</em></div>
-        <div class="who" id="pathway-reading-wrap" style="display:none">Reading: <em id="pathway-reading">—</em></div>
-        <div class="ended" id="ended"></div>
       </section>
 
-      <section class="panel">
-        <div class="tabs" role="tablist" aria-label="Right panel">
+      <section class="panel" id="panel-dialogue">
+        <div class="tabs" role="tablist" aria-label="Dialogue panel">
           <button type="button" class="active" data-tab="dialogue" role="tab" aria-selected="true">Dialogue</button>
-          <button type="button" data-tab="quarterly" role="tab" aria-selected="false">Quarterly log</button>
           <button type="button" data-tab="profile" role="tab" aria-selected="false">Character</button>
         </div>
 
         <div id="pane-dialogue" class="tab-pane active" role="tabpanel">
           <h2>Dialogue</h2>
-          <p class="talk-hint" id="talk-hint">Tap a portrait to counsel. Era-locked faces stay dim.</p>
+          <p class="talk-hint" id="talk-hint">Portraits live here — tap one to counsel. Click the bust / Open profile for the full dossier. Era-locked faces stay dim.</p>
           <p class="talk-hint" id="llm-privacy" hidden>
             When counsel shows <strong>llm</strong>, your prompt and a field snapshot are sent to the
             configured third-party model API (operator key). Offline <strong>stub</strong> keeps everything local.
@@ -722,76 +818,16 @@
                   </div>
                 </div>
               </div>
-              <aside class="talk-side" id="talk-side" aria-label="Figure stats">
+              <aside class="talk-side" id="talk-side" aria-label="Figure stats — click to open profile" tabindex="0" role="button" title="Open character profile">
                 <img class="talk-portrait" id="talk-portrait" alt="" />
                 <div>
                   <div class="talk-name" id="talk-name">—</div>
                   <div class="talk-role" id="talk-role"></div>
                   <div class="talk-ocean ocean" id="talk-ocean"></div>
+                  <button type="button" class="btn-open-profile" id="btn-open-profile">Open profile</button>
                 </div>
               </aside>
             </div>
-          </div>
-        </div>
-
-        <div id="pane-quarterly" class="tab-pane" role="tabpanel" hidden>
-          <h2>Quarterly log</h2>
-          <div class="dialogue-box">
-            <div class="speaker" id="dlg-speaker">Chronicler</div>
-            <div class="line" id="dlg-line">Connecting to the field…</div>
-          </div>
-          <div class="log" id="log" aria-live="polite"></div>
-
-          <div class="actions">
-            <button class="cmd primary" id="btn-advance" type="button">Advance Quarter</button>
-            <button class="cmd" id="btn-alliance" type="button">Attempt Alliance</button>
-            <button class="cmd danger" id="btn-new" type="button">New Run</button>
-
-            <div class="intervene-row">
-              <span class="label">Intervene</span>
-              <label class="chk"><input type="checkbox" id="t-qin" value="qin" /> Qin</label>
-              <label class="chk"><input type="checkbox" id="t-chu" value="chu" checked /> Chu</label>
-              <label class="chk"><input type="checkbox" id="t-qi" value="qi" /> Qi</label>
-              <button class="cmd" id="btn-intervene" type="button">Intervene</button>
-            </div>
-            <div class="save-row">
-              <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase">Campaign</span>
-              <button class="cmd" id="btn-save" type="button">Save</button>
-              <button class="cmd" id="btn-load" type="button">Load</button>
-              <input id="load-file" type="file" accept="application/json,.json" />
-            </div>
-          </div>
-          <div class="status" id="status"></div>
-          <div class="player-invest">
-            <div class="player-purse">Player purse — Political Capital <b id="pc-val">100</b> · Treasury <b id="pt-val">100</b></div>
-            <div class="player-purse">Alliance joint fund — Grain <b id="af-g">0</b> · Treasury <b id="af-t">0</b></div>
-            <div class="player-purse">Actions this quarter — Invest <b id="invest-left">1</b>/1 · Alliance <b id="alliance-left">1</b>/1 · Intervene <b id="intervene-left">1</b>/1 · Fund purposes <b id="af-left">4</b>/4</div>
-            <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase">Invest</span>
-            <select id="invest-target" aria-label="Target state">
-              <option value="chu">Chu</option>
-              <option value="qi">Qi</option>
-              <option value="zhao">Zhao</option>
-              <option value="han">Han</option>
-              <option value="wei">Wei</option>
-              <option value="yan">Yan</option>
-            </select>
-            <button class="cmd" id="btn-fund" type="button">Fund Military</button>
-            <button class="cmd" id="btn-grain" type="button">Send Grain</button>
-            <button class="cmd" id="btn-mediate" type="button">Broker Mediation</button>
-            <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%;margin-top:0.25rem">Alliance fund spend</span>
-            <button class="cmd" id="btn-af-tech" type="button">Tech</button>
-            <button class="cmd" id="btn-af-agri" type="button">Agriculture</button>
-            <button class="cmd" id="btn-af-build" type="button">Construction</button>
-            <button class="cmd" id="btn-af-mil" type="button">Military</button>
-          </div>
-
-          <div class="counsel-box" id="chronicle-box">
-            <div class="clabel">Cultural chronicle <span class="mode-badge" id="chronicle-mode">stub</span></div>
-            <textarea id="chronicle-log" readonly placeholder="Wry seasonal readings — one gloss among several, not destiny…"></textarea>
-          </div>
-          <div class="player-log-wrap">
-            <label for="player-log">Player Log · Shadow Actions</label>
-            <textarea id="player-log" readonly placeholder="Consequence lines and shadow attacks appear here…"></textarea>
           </div>
         </div>
 
@@ -1000,19 +1036,33 @@
     }
 
     function switchTab(name) {
+      if (name === "quarterly") name = "dialogue"; // quarterly is now the left panel
       document.querySelectorAll(".tabs button").forEach((btn) => {
         const on = btn.dataset.tab === name;
         btn.classList.toggle("active", on);
         btn.setAttribute("aria-selected", on ? "true" : "false");
       });
-      ["dialogue", "quarterly", "profile"].forEach((tab) => {
+      ["dialogue", "profile"].forEach((tab) => {
         const pane = $("pane-" + tab);
+        if (!pane) return;
         const on = tab === name;
         pane.classList.toggle("active", on);
         if (on) pane.removeAttribute("hidden");
         else pane.setAttribute("hidden", "");
       });
-      if (name === "profile") loadProfile(selectedFigure);
+      if (name === "profile") loadProfile(selectedFigure || talkFigureId);
+    }
+
+    function openProfileFromTalk(fid) {
+      const id = fid || talkFigureId || selectedFigure;
+      if (!id) {
+        $("status").textContent = "Pick a portrait first.";
+        return;
+      }
+      selectedFigure = id;
+      talkFigureId = talkFigureId || id;
+      switchTab("profile");
+      loadProfile(id);
     }
 
     function renderFigureRadios(figures) {
@@ -1091,9 +1141,29 @@
       });
     }
 
+    function paintChips(chips) {
+      const box = $("counsel-chips");
+      if (!box) return;
+      box.replaceChildren();
+      (chips || []).slice(0, 2).forEach((c) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "chip-btn";
+        const text = String(c ?? "");
+        btn.dataset.chip = text;
+        btn.textContent = text;
+        btn.onclick = () => {
+          const inp = $("counsel-prompt");
+          if (inp) inp.value = btn.dataset.chip || btn.textContent || "";
+        };
+        box.appendChild(btn);
+      });
+    }
+
     async function openTalk(fid) {
       talkFigureId = fid;
       selectedFigure = fid;
+      switchTab("dialogue");
       renderTalkStrip(talkableCast);
       $("talk-empty").hidden = true;
       $("talk-panel").hidden = false;
@@ -1106,7 +1176,7 @@
       }
       setText("talk-name", card.short || card.name || fid);
       setText("talk-role", card.role_label || card.note || "");
-      // Load OCEAN beside chat
+      // Load OCEAN beside chat + focused pressure chips
       try {
         const data = await api("/api/profile?id=" + encodeURIComponent(fid));
         const prof = data.profile || data;
@@ -1120,9 +1190,18 @@
             setText("talk-role", (prof.era_status.note || est || "Unavailable") + "");
           }
         }
+        if (Array.isArray(prof.prompt_chips) && prof.prompt_chips.length) {
+          paintChips(prof.prompt_chips);
+        }
       } catch (e) {
         $("talk-ocean").innerHTML = "";
       }
+      // Refresh chips for this figure via a lightweight state re-read if profile has none
+      try {
+        const st = await api("/api/talkable");
+        // keep cast fresh; chips come from next counsel or profile helper below
+        if (st && st.figures) renderTalkStrip(st.figures);
+      } catch (e) { /* ignore */ }
     }
 
     function closeTalkPanel() {
@@ -1311,23 +1390,7 @@ function renderProfile(prof) {
         ta.scrollTop = ta.scrollHeight;
       }
       const chips = (cr.prompt_chips) || (s && s.counsel_prompt_chips) || [];
-      const box = $("counsel-chips");
-      if (box) {
-        box.replaceChildren();
-        (chips || []).slice(0, 2).forEach((c) => {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "chip-btn";
-          const text = String(c ?? "");
-          btn.dataset.chip = text;
-          btn.textContent = text;
-          btn.onclick = () => {
-            const inp = $("counsel-prompt");
-            if (inp) inp.value = btn.dataset.chip || btn.textContent || "";
-          };
-          box.appendChild(btn);
-        });
-      }
+      paintChips(chips);
     }
 
     function applyPayload(data, freshCount) {
@@ -1764,7 +1827,33 @@ function renderProfile(prof) {
     });
     renderFigureRadios(null);
 
-    
+    function bindOpenProfile() {
+      const side = $("talk-side");
+      const btn = $("btn-open-profile");
+      const go = () => openProfileFromTalk(talkFigureId || selectedFigure);
+      if (btn) {
+        btn.onclick = (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          go();
+        };
+      }
+      if (side) {
+        side.onclick = (ev) => {
+          // Don't steal chip/button clicks inside counsel; only the aside
+          if (ev.target && ev.target.closest && ev.target.closest("#btn-open-profile")) return;
+          go();
+        };
+        side.onkeydown = (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") {
+            ev.preventDefault();
+            go();
+          }
+        };
+      }
+    }
+    bindOpenProfile();
+
     $("btn-counsel").onclick = () => {
       const prompt = ($("counsel-prompt") && $("counsel-prompt").value) || "";
       if (!talkFigureId) {

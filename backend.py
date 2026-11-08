@@ -434,7 +434,10 @@ def character_profile(raw: dict[str, Any] | None, agent_id: str) -> dict[str, An
 
     world = _world_from_ui(raw)
     fid = normalize_figure_id(agent_id)
-    return figure_profile(world, fid)
+    prof = figure_profile(world, fid)
+    if not prof.get("error"):
+        prof["prompt_chips"] = suggest_prompt_chips(world, figure_id=fid)
+    return prof
 
 
 def latest_dialogue(raw: dict[str, Any] | None) -> tuple[str, str]:
