@@ -870,6 +870,31 @@
     .court-dossier-grid .note {
       font-size: 0.6rem; color: var(--ws-paper-dim); margin-top: 0.25rem;
     }
+    .trust-star {
+      display: flex; flex-wrap: wrap; gap: 0.25rem;
+      margin: 0.15rem 0 0.1rem;
+    }
+    .trust-star .tchip {
+      display: inline-flex; align-items: baseline; gap: 0.28rem;
+      padding: 0.12rem 0.35rem;
+      border: 1px solid rgba(166,124,82,0.28);
+      border-radius: 3px;
+      font-size: 0.62rem;
+      color: var(--ws-paper-dim);
+      background: rgba(0,0,0,0.2);
+    }
+    .trust-star .tchip strong {
+      color: var(--ws-paper);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .trust-star .tchip.top {
+      border-color: rgba(92,200,232,0.55);
+      color: var(--ws-gold-bright);
+      background: rgba(92,200,232,0.08);
+    }
+    .trust-star .tchip.top strong { color: var(--ws-electric, #5cc8e8); }
+    .trust-star .tchip.cold { opacity: 0.72; }
     @media (max-width: 1200px) {
       .field-panel .factions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     }
@@ -1683,17 +1708,36 @@
       const geo = (((s.m4 || {}).by_state) || {})[id] || [];
       const trust = s.trust || {};
       const packets = ag.packets || ag.packet_views || [];
-      const trustRows = Object.entries(trust)
-        .filter(([k]) => k.startsWith(id + "->") || k.endsWith("->" + id))
-        .sort((a, b) => Number(b[1]) - Number(a[1]))
-        .slice(0, 3);
-      const allies = trustRows
-        .map(([k, v]) => {
-          const other = k.startsWith(id + "->") ? k.split("->")[1] : k.split("->")[0];
-          const warm = Number(v) >= 0.6 ? "warm" : Number(v) >= 0.4 ? "cool" : "cold";
-          return (FIELD_META[other] || { name: other }).name + " " + warm;
-        })
-        .join(" · ") || "thin ties";
+      // Ego-star: one chip per other court (outbound id→other). Never repeat a partner.
+      const egoEdges = FIELD_IDS.filter((fid) => fid !== id).map((fid) => {
+        const outKey = id + "->" + fid;
+        const inKey = fid + "->" + id;
+        const outV = Number(trust[outKey]);
+        const inV = Number(trust[inKey]);
+        const out = Number.isFinite(outV) ? outV : 0.5;
+        const inn = Number.isFinite(inV) ? inV : 0.5;
+        return {
+          id: fid,
+          name: (FIELD_META[fid] || { name: fid }).name,
+          out,
+          inn,
+          // Rank by what this court extends; mutual warmth for label only
+          score: out,
+        };
+      }).sort((a, b) => b.score - a.score);
+      const topIds = new Set(egoEdges.slice(0, 2).map((e) => e.id));
+      const trustStarHtml = egoEdges.length
+        ? (`<div class="trust-star" title="Outbound trust from ${(FIELD_META[id] || {}).name || id} · one chip per partner">` +
+          egoEdges.map((e) => {
+            const band = e.out >= 0.6 ? "warm" : e.out >= 0.4 ? "cool" : "cold";
+            const cls = "tchip"
+              + (topIds.has(e.id) ? " top" : "")
+              + (band === "cold" ? " cold" : "");
+            // Show outbound only in the number; avoid listing the partner twice via in/out edges
+            return `<span class="${cls}"><strong>${esc(e.name)}</strong>${esc(band)} ${esc((e.out * 100).toFixed(0))}</span>`;
+          }).join("") +
+          `</div>`)
+        : `<div class="note">No dyads</div>`;
       const geoNames = (Array.isArray(geo) ? geo : []).slice(0, 3)
         .map((g) => g.label || g.id)
         .join(" · ") || "no nodes";
@@ -1751,14 +1795,16 @@
       const placeLis = [
         ["Geography", geoNames],
         ["Bloc · stance", (ag.bloc === "qin" ? "Qin" : "Anti-Qin") + " · " + (ag.intention_label || ag.intention || "—")],
-        ["Closest ties", allies],
         ["Belief packets", pkt],
       ].map(([k, v]) => `<li><span>${esc(k)}</span><span>${esc(v)}</span></li>`).join("");
 
       body.innerHTML =
         `<div class="dcol"><h4>Strength</h4><ul>${strengthLis}</ul></div>` +
         `<div class="dcol"><h4>People</h4><ul>${peopleLis}</ul></div>` +
-        `<div class="dcol"><h4>Place · ties</h4><ul>${placeLis}</ul></div>` +
+        `<div class="dcol"><h4>Place · ties</h4><ul>${placeLis}</ul>` +
+          `<div class="note" style="margin-top:0.35rem">Trust from ${esc(meta.name)} → others (top edges highlighted)</div>` +
+          trustStarHtml +
+          `</div>` +
         `<div class="grounding"><strong>${esc(tier)}</strong> · ${esc(COURT_GROUNDING[id] || "placeholder ordinals")}` +
           ` Ranks only — not census %; crafts are TECH_DAG nodes (known ≠ fielded). Magnitudes still PLACEHOLDER.</div>`;
       box.hidden = false;
