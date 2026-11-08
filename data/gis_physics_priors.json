@@ -1,0 +1,140 @@
+{
+  "honesty": "In-store GIS/physics inventory for M4/M1. Concrete coords and canal grade only where vault docs publish them; all other fields are ordinal ranks with an explicit scalar map — not survey GPS or DEM extracts.",
+  "sources": [
+    "docs/ws-archaeology-gis-sources.md §3 (capital seed WGS84; Ying ~16 km²)",
+    "docs/archaeology-casting-infra-morphospaces.md §2–3 (casting ordinals; 郑国渠 ~0.6‰; 都江堰 practice)",
+    "docs/economic-grounding-sources.md (fiscal extractability ranks — used only for extraction_mod split, not march/defense)",
+    "docs/grafted-persona-world-engine-blueprint.md §2.4 (Hangu/Wu/Chu river priors)",
+    "docs/mechanisms-master.md (M4/M1/M2 live math)"
+  ],
+  "seed_points_wgs84": {
+    "ying_jinancheng": {
+      "label": "楚纪南故城 (郢)",
+      "lat": 30.406,
+      "lon": 112.19,
+      "role": "chu_capital",
+      "approx_area_km2": 16.0,
+      "precision": "approx_open_seed",
+      "source": "docs/ws-archaeology-gis-sources.md §3"
+    },
+    "xianyang": {
+      "label": "秦咸阳城遗址",
+      "lat": 34.417,
+      "lon": 108.858,
+      "role": "qin_capital",
+      "precision": "approx_open_seed",
+      "source": "docs/ws-archaeology-gis-sources.md §3"
+    }
+  },
+  "derived_distances_km": {
+    "ying_xianyang_haversine": {
+      "from": "ying_jinancheng",
+      "to": "xianyang",
+      "km": 544.7,
+      "method": "haversine_R6371",
+      "theater_scale_km": 800.0,
+      "note": "Derived from vault seed coords only — not a digitized road length."
+    }
+  },
+  "canal_physics": {
+    "zhengguo_grade_permille": {
+      "value": 0.6,
+      "unit": "permille",
+      "meaning": "Surveyed reconstruction cross-basin canal grade ~0.6‰ (郑国渠)",
+      "source": "docs/archaeology-casting-infra-morphospaces.md §3.1",
+      "maps_to": "guanzhong silt_irrigation_index = min(1, value/1.0)"
+    },
+    "dujiangyan_practice": {
+      "ordinal_logistics": 5,
+      "note": "Embodied bifurcation/sediment practice — no OA Qin shapefile; boosts Qin canal_logistics prior only.",
+      "source": "docs/archaeology-casting-infra-morphospaces.md §3.1"
+    }
+  },
+  "ordinal_ranks": {
+    "scale": {"lo": 1, "hi": 5, "meaning": "1=lowest relative prior … 5=highest; NOT GPS precision"},
+    "nodes": {
+      "hangu_pass": {
+        "kind": "pass",
+        "defense": 5,
+        "march": 5,
+        "extraction": 2,
+        "levy_geo": 2,
+        "qin_pressure": 5,
+        "basis": "Primary Qin eastern chokepoint (blueprint Hangu prior); no DEM elevation in vault."
+      },
+      "wu_pass": {
+        "kind": "pass",
+        "defense": 4,
+        "march": 4,
+        "extraction": 2,
+        "levy_geo": 2,
+        "qin_pressure": 3,
+        "basis": "Secondary southern Qin approach (武关); ordinal only."
+      },
+      "central_plain_corridor": {
+        "kind": "corridor",
+        "defense": 2,
+        "march": 2,
+        "extraction": 3,
+        "levy_geo": 3,
+        "qin_pressure": 4,
+        "basis": "Low terrain friction once past passes; Han/Wei buffer — not a digitized corridor polyline."
+      },
+      "chu_riverine": {
+        "kind": "riverine",
+        "defense": 4,
+        "march": 4,
+        "extraction": 2,
+        "levy_geo": 4,
+        "qin_pressure": 1,
+        "basis": "Wetland/river defense + Qin southward logistics friction; capital seed Ying ~16 km² supports areal depth, not wall height."
+      },
+      "qi_peninsula": {
+        "kind": "plain",
+        "defense": 3,
+        "march": 3,
+        "extraction": 3,
+        "levy_geo": 4,
+        "qin_pressure": 2,
+        "basis": "Eastern closure + commercial basin geography; mint/foundry intensity is M2/econ, not DEM."
+      },
+      "guanzhong_levy": {
+        "kind": "levy_basin",
+        "defense": 3,
+        "march": 2,
+        "extraction": 4,
+        "levy_geo": 5,
+        "qin_pressure": 3,
+        "basis": "Guanzhong hydraulic basin + 郑国渠 silt-irrigation prior (0.6‰ grade → silt index)."
+      }
+    }
+  },
+  "casting_foundry_ordinals": {
+    "note": "For M2 honesty / Adoption seeds — not M4 march/defense. Fiscal extractability stays in economic-grounding-sources.md.",
+    "ranks": {
+      "han": {"iron_weapons": 5, "bronze_craft": 3},
+      "wei": {"iron_weapons": 4, "bronze_craft": 4},
+      "zhao": {"iron_weapons": 4, "bronze_craft": 4},
+      "yan": {"iron_mould": 5, "bronze_craft": 3},
+      "chu": {"bronze_craft": 5, "iron_weapons": 3},
+      "qi": {"commercial_metal": 4, "bronze_craft": 3},
+      "qin": {"metallurgy": 2, "canal_logistics": 5}
+    },
+    "source": "docs/archaeology-casting-infra-morphospaces.md §2.1"
+  },
+  "scalar_map": {
+    "defense_floor": 0.25,
+    "defense_span": 0.65,
+    "march_floor": 0.25,
+    "march_span": 0.65,
+    "extraction_floor": 0.28,
+    "extraction_span": 0.55,
+    "levy_floor": 0.3,
+    "levy_span": 0.55,
+    "qin_pressure_floor": -0.2,
+    "qin_pressure_span": 0.85,
+    "corridor_distance_march_blend": 0.35,
+    "silt_famine_buffer_max": 0.12,
+    "formula": "unit=(rank-lo)/(hi-lo); scalar=floor+span*unit; qin_pressure uses signed span from floor"
+  }
+}
