@@ -115,6 +115,8 @@ class WorldState:
     player_offensive_fronts: dict[str, int] = field(default_factory=dict)  # attacker→fronts this quarter
     last_player_offensive: dict[str, Any] | None = None
     alliance_fund_spent_purposes: list[str] = field(default_factory=list)
+    # Last successful quorum contributor ids — activity signal for joint-fund scale
+    alliance_last_contributors: list[str] = field(default_factory=list)
     # Run-start baselines + append-only per-event faction deltas (Field dashboard)
     faction_baseline: dict[str, dict[str, float]] = field(default_factory=dict)
     meso_baseline: dict[str, float] = field(default_factory=dict)
@@ -348,6 +350,7 @@ class WorldState:
                 else None
             ),
             "alliance_fund_spent_purposes": list(self.alliance_fund_spent_purposes),
+            "alliance_last_contributors": list(self.alliance_last_contributors or []),
             "faction_baseline": dict(self.faction_baseline),
             "meso_baseline": dict(self.meso_baseline),
             "faction_delta_log": list(self.faction_delta_log),
@@ -478,6 +481,9 @@ class WorldState:
                 else None
             ),
             alliance_fund_spent_purposes=list(raw.get("alliance_fund_spent_purposes") or []),
+            alliance_last_contributors=[
+                str(x) for x in (raw.get("alliance_last_contributors") or [])
+            ],
             faction_baseline=dict(raw.get("faction_baseline") or {}),
             meso_baseline=dict(raw.get("meso_baseline") or {}),
             faction_delta_log=list(raw.get("faction_delta_log") or []),

@@ -336,17 +336,20 @@ def _faction_snap(world: WorldState, aid: str) -> dict[str, float]:
 
 
 # Player soft-lock invest actions (HTML / CLI / API)
-PLAYER_ACTIONS = ("fund_military", "send_grain", "broker_mediation")
+# Four invest purposes — same labels/flow as Alliance fund spend
+PLAYER_ACTIONS = ("tech", "agriculture", "construction", "military")
 PLAYER_ACTION_LABELS = {
-    "fund_military": "Fund Military",
-    "send_grain": "Send Grain",
-    "broker_mediation": "Broker Mediation",
+    "tech": "Tech",
+    "agriculture": "Agriculture",
+    "construction": "Construction",
+    "military": "Military",
 }
 # Costs: (political_capital, treasury)
 PLAYER_ACTION_COSTS = {
-    "fund_military": (12.0, 18.0),
-    "send_grain": (8.0, 14.0),
-    "broker_mediation": (16.0, 10.0),
+    "tech": (10.0, 12.0),
+    "agriculture": (8.0, 14.0),
+    "construction": (16.0, 10.0),
+    "military": (12.0, 18.0),
 }
 OVERCONFIDENCE_FEAR = 0.20  # Trust-Action Paradox threshold
 ANTI_QIN_TARGETS = ("chu", "qi", "zhao", "han", "wei", "yan")
@@ -413,7 +416,7 @@ def _living_anti_qin(world: WorldState, tid: str):
         by = getattr(ag, "annexed_by", None) or "?"
         return None, (
             f"Player action failed: {ag.name} is annexed by {by} — "
-            f"cannot Fund Military / Send Grain / Mediate"
+            f"cannot Invest Tech/Agriculture/Construction/Military"
         )
     if float(getattr(ag, "viability", 0.0) or 0.0) <= 0.0:
         return None, (
@@ -434,9 +437,10 @@ def _append_player_log(world: WorldState, line: str) -> None:
 def player_action(world: WorldState, action: str, target: str = "chu") -> WorldState:
     """Invest action targeting one anti-Qin court — spends player Political Capital/Treasury.
 
-    Fund Military / Send Grain / Broker Mediation each lower Fear_of_Qin and
-    Resentment (and cool defection_accumulator). Mediation raises trust; failure
-    risk → civil war. If Fear drops below ~0.20, Trust-Action Paradox fires.
+    Four purposes match Alliance fund: Tech / Agriculture / Construction / Military.
+    Each lowers Fear_of_Qin and Resentment (and cools defection_accumulator).
+    Construction raises trust (legacy mediation); failure risk → civil war.
+    If Fear drops below ~0.20, Trust-Action Paradox fires.
 
     Valid targets: chu, qi, zhao, han, wei, yan (living / not annexed).
     Sets world.last_player_action_error (str|None) for API/UI.
@@ -447,18 +451,33 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
     world.last_player_action_error = None
     act = str(action or "").strip().lower().replace(" ", "_").replace("-", "_")
     aliases = {
-        "fund": "fund_military",
-        "military": "fund_military",
-        "grain": "send_grain",
-        "send": "send_grain",
-        "mediate": "broker_mediation",
-        "mediation": "broker_mediation",
-        "broker": "broker_mediation",
+        # Canonical four (aligned with Alliance fund)
+        "agri": "agriculture",
+        "farm": "agriculture",
+        "grain": "agriculture",
+        "send": "agriculture",
+        "send_grain": "agriculture",
+        "build": "construction",
+        "infra": "construction",
+        "mediate": "construction",
+        "mediation": "construction",
+        "broker": "construction",
+        "broker_mediation": "construction",
+        "mil": "military",
+        "army": "military",
+        "arms": "military",
+        "fund": "military",
+        "fund_military": "military",
+        "research": "tech",
+        "m2": "tech",
     }
     act = aliases.get(act, act)
     tid = _normalize_invest_target(target)
     if act not in PLAYER_ACTIONS:
-        note = f"Player action failed: unknown action {action!r} (need fund_military|send_grain|broker_mediation)"
+        note = (
+            f"Player action failed: unknown action {action!r} "
+            f"(need tech|agriculture|construction|military)"
+        )
         world.last_player_action_error = note
         world.append_log(note, event_id="player_action", action="error")
         _append_player_log(world, note)
@@ -467,7 +486,7 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
     if left <= 0:
         note = (
             "Player action failed: invest budget spent this quarter "
-            "(Fund Military / Send Grain / Broker Mediation share 1 action) — Advance to reset"
+            "(Tech / Agriculture / Construction / Military share 1 action) — Advance to reset"
         )
         world.last_player_action_error = note
         world.append_log(note, event_id="player_action", action="budget")
@@ -503,22 +522,20 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
     res0 = float(ag.state.resentment)
 
     civil_note = ""
-    if act == "fund_military":
+    if act == "military":
         fear_delta, res_delta = -0.14, -0.07
         ag.state.status_threat = max(0.0, ag.state.status_threat - 0.06)
         ag.treasury = min(100.0, float(ag.treasury) + 8.0)
-        # Mild viability/vitality recovery on the recipient (not only cohesion)
         ag.viability = min(100.0, float(ag.viability) + 3.5)
         world.meso.cohesion = min(100.0, world.meso.cohesion + 4.0)
         world.world.military_coalition = min(
             1.0, float(getattr(world.world, "military_coalition", 0.0)) + 0.04
         )
-        flavor = "arms stipend cools Fear of Qin; viability +3.5 — court holds the line"
-    elif act == "send_grain":
+        flavor = "military stipend cools Fear of Qin; viability +3.5 — court holds the line"
+    elif act == "agriculture":
         fear_delta, res_delta = -0.07, -0.14
         ag.state.betrayal_memory = max(0.0, ag.state.betrayal_memory - 0.04)
         ag.grain = min(100.0, float(ag.grain) + 12.0)
-        # Mild viability/vitality recovery on the recipient (not only cohesion)
         ag.viability = min(100.0, float(ag.viability) + 4.5)
         world.meso.cohesion = min(100.0, world.meso.cohesion + 3.0)
         demo = getattr(world, "demographics", None)
@@ -526,8 +543,8 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
             court = demo.courts.get(tid) if hasattr(demo, "courts") else None
             if court is not None and hasattr(court, "satisfaction"):
                 court.satisfaction = min(1.0, float(court.satisfaction) + 0.05)
-        flavor = "grain relief eases Resentment; viability +4.5 — granaries steady the court"
-    else:  # broker_mediation
+        flavor = "agriculture relief eases Resentment; viability +4.5 — granaries steady the court"
+    elif act == "construction":
         fear_delta, res_delta = -0.09, -0.15
         ag.state.status_threat = max(0.0, ag.state.status_threat - 0.10)
         from .nonlinear import saturating_up as _sat_up
@@ -538,10 +555,21 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
             world.trust[f"{other_id}->{tid}"] = _sat_up(world.trust.get(f"{other_id}->{tid}", 0.5), 0.10)
             world.trust[f"{tid}->{other_id}"] = _sat_up(world.trust.get(f"{tid}->{other_id}", 0.5), 0.10)
         world.meso.cohesion = min(100.0, world.meso.cohesion + 5.0)
-        flavor = "brokered mediation cools Resentment and rebuilds interstate trust"
+        world.world.defense_mod = min(1.0, float(world.world.defense_mod) + 0.02)
+        ag.viability = min(100.0, float(ag.viability) + 2.5)
+        flavor = "construction works cool Resentment, rebuild trust, and firm local defenses"
         cw = civil_war_check(world, tid)
         if cw:
             civil_note = " " + cw
+    else:  # tech
+        fear_delta, res_delta = -0.08, -0.05
+        ag.state.status_threat = max(0.0, ag.state.status_threat - 0.04)
+        ag.viability = min(100.0, float(ag.viability) + 2.5)
+        world.world.adoption_meter = min(
+            1.0, float(getattr(world.world, "adoption_meter", 0.0)) + 0.03
+        )
+        world.meso.cohesion = min(100.0, world.meso.cohesion + 2.0)
+        flavor = "tech stipend lifts adoption; mild fear cool and viability +2.5"
 
     ag.state.fear_of_qin = max(0.0, min(1.0, fear0 + fear_delta))
     ag.state.resentment = max(0.0, min(1.0, res0 + res_delta))
@@ -593,7 +621,7 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
         actor=tid,
         action=act,
         dials_fired=["fear_of_qin", "resentment", "defection_accumulator", "resources"],
-        anchor="player soft-lock invest (Fund Military / Send Grain / Broker Mediation)",
+        anchor="player soft-lock invest (Tech / Agriculture / Construction / Military)",
     )
     _append_player_log(world, f"[t={world.tick}] {note}")
     world.clamp()
@@ -944,7 +972,7 @@ ALLIANCE_FUND_LABELS = {
     "construction": "Construction",
     "military": "Military",
 }
-# Spend cost (grain, treasury) per purpose action from the joint fund
+# Base spend cost (grain, treasury) — scaled by membership + activity at spend time
 ALLIANCE_FUND_COSTS = {
     "tech": (4.0, 8.0),
     "agriculture": (8.0, 3.0),
@@ -963,10 +991,50 @@ def _alliance_eligible(ag) -> bool:
     return pool >= 8.0 and float(getattr(ag, "viability", 0.0)) > 0.0
 
 
+def alliance_membership(world: WorldState) -> dict[str, object]:
+    """Living members vs active partners (cooperate now or last quorum contributors)."""
+    members = [a for a in world.agents.values() if _alliance_eligible(a)]
+    last = {str(x) for x in (getattr(world, "alliance_last_contributors", None) or [])}
+    active_u = []
+    seen: set[str] = set()
+    for a in members:
+        intent = getattr(getattr(a, "intention", None), "current", None)
+        if intent == "cooperate" or a.id in last:
+            if a.id not in seen:
+                seen.add(a.id)
+                active_u.append(a)
+    return {
+        "members": members,
+        "active": active_u,
+        "member_ids": [a.id for a in members],
+        "active_ids": [a.id for a in active_u],
+        "n_members": len(members),
+        "n_active": len(active_u),
+    }
+
+
+def alliance_fund_scale(world: WorldState) -> dict[str, float]:
+    """Cost/effect multipliers from membership size + activity (not a flat spend)."""
+    snap = alliance_membership(world)
+    n_m = float(snap["n_members"])
+    n_a = float(snap["n_active"])
+    # Sparse alliance spends less and delivers less; busy quorum spends/pays more
+    cost_mult = max(0.45, min(1.85, 0.40 + 0.10 * n_m + 0.14 * n_a))
+    effect_mult = max(0.35, min(2.10, 0.30 + 0.12 * n_m + 0.18 * n_a))
+    return {
+        "cost_mult": cost_mult,
+        "effect_mult": effect_mult,
+        "n_members": n_m,
+        "n_active": n_a,
+    }
+
+
 def spend_alliance_fund(world: WorldState, purpose: str) -> WorldState:
     """Spend joint alliance fund on tech / agriculture / construction / military.
 
-    Demo play-feel: at most one alliance-fund spend per tick (separate from invest).
+    Amount and effect scale with alliance membership + activity (cooperate /
+    last quorum contributors). Benefits hit members; active partners get the
+    full share. Demo: each purpose once per quarter.
     """
     world.last_alliance_fund_error = None
     pur = str(purpose or "").strip().lower()
@@ -1002,13 +1070,32 @@ def spend_alliance_fund(world: WorldState, purpose: str) -> WorldState:
         world.append_log(note, event_id="alliance_fund", action="budget")
         _append_player_log(world, f"[t={world.tick}] {note}")
         return world
-    g_cost, t_cost = ALLIANCE_FUND_COSTS[pur]
+    snap = alliance_membership(world)
+    members = list(snap["members"])  # type: ignore[arg-type]
+    active_ids = set(snap["active_ids"])  # type: ignore[arg-type]
+    if not members:
+        note = (
+            "Alliance fund spend failed: no living alliance members "
+            "(eligible anti-Qin courts) — cannot disburse"
+        )
+        world.last_alliance_fund_error = note
+        world.append_log(note, event_id="alliance_fund", action="error")
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+    scale = alliance_fund_scale(world)
+    cost_mult = float(scale["cost_mult"])
+    effect_mult = float(scale["effect_mult"])
+    g_base, t_base = ALLIANCE_FUND_COSTS[pur]
+    g_cost = round(g_base * cost_mult, 2)
+    t_cost = round(t_base * cost_mult, 2)
     g = float(getattr(world, "alliance_fund_grain", 0.0))
     t = float(getattr(world, "alliance_fund_treasury", 0.0))
     if g < g_cost or t < t_cost:
         note = (
-            f"Alliance fund broke: need grain≥{g_cost:.0f} treasury≥{t_cost:.0f} "
-            f"for {ALLIANCE_FUND_LABELS[pur]} (have {g:.1f}/{t:.1f})"
+            f"Alliance fund broke: need grain≥{g_cost:.1f} treasury≥{t_cost:.1f} "
+            f"for {ALLIANCE_FUND_LABELS[pur]} "
+            f"(×{cost_mult:.2f} from {int(scale['n_members'])} members/"
+            f"{int(scale['n_active'])} active; have {g:.1f}/{t:.1f})"
         )
         world.last_alliance_fund_error = note
         world.append_log(note, event_id="alliance_fund", action="broke")
@@ -1019,50 +1106,63 @@ def spend_alliance_fund(world: WorldState, purpose: str) -> WorldState:
     spent.append(pur)
     world.alliance_fund_spent_purposes = spent
     label = ALLIANCE_FUND_LABELS[pur]
-    effect = ""
-    # Mild viability/vitality recovery for living anti-Qin recipients (shared spend)
-    via_bump = {"tech": 1.5, "agriculture": 2.5, "construction": 2.0, "military": 2.0}.get(pur, 1.5)
+    via_base = {"tech": 1.5, "agriculture": 2.5, "construction": 2.0, "military": 2.0}.get(pur, 1.5)
+    via_bump = via_base * effect_mult
     via_touched = 0
-    for ag in world.agents.values():
-        if ag.bloc == "anti_qin" and not getattr(ag, "annexed", False) and float(ag.viability) > 0:
-            ag.viability = min(100.0, float(ag.viability) + via_bump)
-            via_touched += 1
+    for ag in members:
+        share = 1.0 if ag.id in active_ids else 0.45
+        ag.viability = min(100.0, float(ag.viability) + via_bump * share)
+        via_touched += 1
     if pur == "tech":
         world.world.adoption_meter = min(
-            1.0, float(getattr(world.world, "adoption_meter", 0.0)) + 0.04
+            1.0,
+            float(getattr(world.world, "adoption_meter", 0.0)) + 0.04 * effect_mult,
         )
         world.world.military_coalition = min(
-            1.0, float(getattr(world.world, "military_coalition", 0.0)) + 0.02
+            1.0,
+            float(getattr(world.world, "military_coalition", 0.0)) + 0.02 * effect_mult,
         )
         effect = (
             f"adoption→{world.world.adoption_meter:.2f}, coal_mil↑, "
-            f"viability+{via_bump:.1f}×{via_touched}"
+            f"via+{via_bump:.1f}×{via_touched} (active full / idle ×0.45)"
         )
     elif pur == "agriculture":
-        for ag in world.agents.values():
-            if ag.bloc == "anti_qin" and not getattr(ag, "annexed", False):
-                ag.grain = min(100.0, float(ag.grain) + 3.0)
-                ag.geographic_yield = min(1.0, float(ag.geographic_yield) + 0.01)
-        effect = f"anti-Qin grain+3, yield+0.01, viability+{via_bump:.1f}×{via_touched}"
-    elif pur == "construction":
-        world.world.defense_mod = min(1.0, float(world.world.defense_mod) + 0.03)
-        world.meso.cohesion = min(100.0, world.meso.cohesion + 2.0)
+        grain_add = 3.0 * effect_mult
+        yield_add = 0.01 * effect_mult
+        for ag in members:
+            share = 1.0 if ag.id in active_ids else 0.45
+            ag.grain = min(100.0, float(ag.grain) + grain_add * share)
+            ag.geographic_yield = min(1.0, float(ag.geographic_yield) + yield_add * share)
         effect = (
-            f"defense_mod→{world.world.defense_mod:.2f}, cohesion+2, "
-            f"viability+{via_bump:.1f}×{via_touched}"
+            f"member grain+{grain_add:.1f}/yield+{yield_add:.3f} (active full), "
+            f"via+{via_bump:.1f}×{via_touched}"
+        )
+    elif pur == "construction":
+        world.world.defense_mod = min(
+            1.0, float(world.world.defense_mod) + 0.03 * effect_mult
+        )
+        world.meso.cohesion = min(100.0, world.meso.cohesion + 2.0 * effect_mult)
+        effect = (
+            f"defense_mod→{world.world.defense_mod:.2f}, cohesion↑, "
+            f"via+{via_bump:.1f}×{via_touched}"
         )
     else:  # military
         world.world.military_coalition = min(
-            1.0, float(getattr(world.world, "military_coalition", 0.0)) + 0.05
+            1.0,
+            float(getattr(world.world, "military_coalition", 0.0)) + 0.05 * effect_mult,
         )
-        world.qin_pressure = max(0.0, float(world.qin_pressure) - 2.0)
+        world.qin_pressure = max(
+            0.0, float(world.qin_pressure) - 2.0 * effect_mult
+        )
         effect = (
             f"coal_mil→{world.world.military_coalition:.2f}, "
             f"pressure→{world.qin_pressure:.0f}, "
-            f"viability+{via_bump:.1f}×{via_touched}"
+            f"via+{via_bump:.1f}×{via_touched}"
         )
     note = (
-        f"Alliance fund → {label} (−grain {g_cost:.0f}/−treasury {t_cost:.0f}): {effect}. "
+        f"Alliance fund → {label} (−grain {g_cost:.1f}/−treasury {t_cost:.1f}, "
+        f"cost×{cost_mult:.2f} effect×{effect_mult:.2f} from "
+        f"{int(scale['n_members'])} members/{int(scale['n_active'])} active): {effect}. "
         f"Fund now grain={world.alliance_fund_grain:.1f} treasury={world.alliance_fund_treasury:.1f}"
     )
     if not hasattr(world, "alliance_fund_log") or world.alliance_fund_log is None:
@@ -1125,7 +1225,8 @@ def attempt_alliance(world: WorldState) -> WorldState:
     if quorum:
         world.meso.cohesion = min(100.0, world.meso.cohesion + 9.0)
         world.qin_pressure = max(0.0, world.qin_pressure - 8.0)
-        # Psych cool always; 15% skim only when joint fund is still thin
+        world.alliance_last_contributors = [a.id for a in contributors]
+        # Psych cool always; skim only when joint fund is still thin
         for a in contributors:
             a.state.fear_of_qin = max(0.0, a.state.fear_of_qin - 0.05)
             a.state.betrayal_memory = max(0.0, a.state.betrayal_memory - 0.03)

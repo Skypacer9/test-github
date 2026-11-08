@@ -815,7 +815,7 @@ def _invest_response(action: str, target: str):
 
 @app.post("/api/player_action")
 def api_player_action():
-    """Fund Military / Send Grain / Broker Mediation — target an anti-Qin state."""
+    """Invest Tech|Agriculture|Construction|Military — target an anti-Qin state."""
     blocked = _mutate_guard()
     if blocked:
         return blocked
@@ -823,11 +823,15 @@ def api_player_action():
     action = str(body.get("action") or "").strip().lower()
     target = str(body.get("target") or "chu").strip().lower()
     allowed = {
+        "tech", "agriculture", "construction", "military",
         "fund_military", "send_grain", "broker_mediation",
-        "fund", "grain", "mediate", "mediation", "broker", "military", "send",
+        "fund", "grain", "agri", "farm", "mediate", "mediation", "broker",
+        "mil", "army", "arms", "send", "build", "infra", "research", "m2",
     }
     if action not in allowed:
-        return jsonify({"ok": False, "error": "action must be fund_military|send_grain|broker_mediation"}), 400
+        return jsonify(
+            {"ok": False, "error": "action must be tech|agriculture|construction|military"}
+        ), 400
     return _invest_response(action, target)
 
 

@@ -465,7 +465,7 @@ def test_player_invest_costs_and_econ_fields():
     assert w.player_political_capital < pc0
     assert w.player_treasury < tr0
     assert w.player_invest_actions_left == 0
-    assert any("Fund Military" in x for x in w.player_log)
+    assert any("Military" in x and "→" in x for x in w.player_log)
 
     # Second invest same tick is budget-blocked
     player_action(w, "send_grain", "qi")
@@ -521,43 +521,48 @@ def test_annex_absorbs_victim_tech_board():
 
 
 def test_alliance_fund_spend_reduces_totals():
-    """Joint fund grain/treasury must drop on Tech/Agri/Build/Military spend."""
+    """Joint fund grain/treasury drop scales with membership + activity (not flat)."""
     from backend import _project, spend_alliance_fund as backend_spend
-    from engine.tick import ALLIANCE_FUND_COSTS, spend_alliance_fund
+    from engine.tick import ALLIANCE_FUND_COSTS, alliance_fund_scale, spend_alliance_fund
     from engine.world import new_world
 
     w = new_world()
-    w.alliance_fund_grain = 40.0
-    w.alliance_fund_treasury = 40.0
+    w.alliance_fund_grain = 80.0
+    w.alliance_fund_treasury = 80.0
     w.alliance_fund_spent_purposes = []
     for purpose in ("tech", "agriculture", "construction", "military"):
         g0, t0 = w.alliance_fund_grain, w.alliance_fund_treasury
-        gc, tc = ALLIANCE_FUND_COSTS[purpose]
+        scale = alliance_fund_scale(w)
+        gc = round(ALLIANCE_FUND_COSTS[purpose][0] * float(scale["cost_mult"]), 2)
+        tc = round(ALLIANCE_FUND_COSTS[purpose][1] * float(scale["cost_mult"]), 2)
         spend_alliance_fund(w, purpose)
         assert purpose in w.alliance_fund_spent_purposes
         assert abs(w.alliance_fund_grain - (g0 - gc)) < 1e-6, purpose
         assert abs(w.alliance_fund_treasury - (t0 - tc)) < 1e-6, purpose
+        assert float(scale["cost_mult"]) != 1.0 or float(scale["n_members"]) >= 1
         ui = _project(w)
         assert abs(ui["alliance_fund_grain"] - w.alliance_fund_grain) < 1e-6
         assert abs(ui["alliance_fund_treasury"] - w.alliance_fund_treasury) < 1e-6
         assert abs(ui["_engine"]["alliance_fund_grain"] - w.alliance_fund_grain) < 1e-6
+        assert "n_members" in (ui.get("alliance_membership") or {})
     # Re-spend same purpose blocked without Advance
     spend_alliance_fund(w, "tech")
     assert w.last_alliance_fund_error and "already used" in w.last_alliance_fund_error.lower()
 
-    # Backend adapter path
+    # Backend adapter path — scaled military spend still drops fund
     st = _project(new_world())
-    st["alliance_fund_grain"] = 40.0
-    st["alliance_fund_treasury"] = 40.0
+    st["alliance_fund_grain"] = 80.0
+    st["alliance_fund_treasury"] = 80.0
     st["alliance_fund_spent_purposes"] = []
-    st["_engine"]["alliance_fund_grain"] = 40.0
-    st["_engine"]["alliance_fund_treasury"] = 40.0
+    st["_engine"]["alliance_fund_grain"] = 80.0
+    st["_engine"]["alliance_fund_treasury"] = 80.0
     st["_engine"]["alliance_fund_spent_purposes"] = []
     out, msgs, err = backend_spend(st, "military")
     assert err is None
-    assert abs(out["alliance_fund_grain"] - 37.0) < 1e-6
-    assert abs(out["alliance_fund_treasury"] - 31.0) < 1e-6
+    assert out["alliance_fund_grain"] < 80.0
+    assert out["alliance_fund_treasury"] < 80.0
     assert "military" in out["alliance_fund_spent_purposes"]
+    assert (out.get("alliance_membership") or {}).get("n_members", 0) >= 1
 
 
 def test_demo_playfeel_action_budget_and_bystander_annex():
@@ -644,7 +649,10 @@ def test_send_grain_all_anti_qin_targets():
     for tid in ("chu", "qi", "zhao", "han", "wei", "yan"):
         st, msgs, err = do_player_action(fresh_run(), "send_grain", tid)
         assert err is None, f"{tid}: {err}"
-        assert any("Send Grain" in x and "failed" not in x.lower() for x in (st.get("player_log") or []))
+        assert any(
+            "Agriculture" in x and "failed" not in x.lower()
+            for x in (st.get("player_log") or [])
+        )
 
     # Annexed Han must fail with a clear annexed message (not a vague living-state blurb)
     w = new_world()

@@ -13,6 +13,7 @@ from engine.packets import conflict_score, packet_public_view, resolve_packet_id
 from engine.patron_client import clique_sync, sync_bonus
 from engine.tech import field_tech_summary, tech_pressure_delta, tech_quorum_ok, tech_structural_damage
 from engine.conflict import ensure_econ_fields, resource_pool
+from engine.tick import alliance_fund_scale, alliance_membership
 from engine.tick import attempt_alliance as eng_alliance
 from engine.tick import intervene_many as eng_intervene_many
 from engine.tick import pathway_reading_note
@@ -26,6 +27,20 @@ from engine.trust import chu_clique_strength, get_trust
 from engine.world import WorldState, new_world
 
 _ENGINE_KEY = "_engine"
+
+
+def _alliance_membership_ui(world: WorldState) -> dict[str, Any]:
+    snap = alliance_membership(world)
+    scale = alliance_fund_scale(world)
+    return {
+        "member_ids": list(snap.get("member_ids") or []),
+        "active_ids": list(snap.get("active_ids") or []),
+        "n_members": int(snap.get("n_members") or 0),
+        "n_active": int(snap.get("n_active") or 0),
+        "cost_mult": float(scale.get("cost_mult") or 1.0),
+        "effect_mult": float(scale.get("effect_mult") or 1.0),
+    }
+
 
 # Legacy alias — prefer dossiers.dossier_for
 DOSSIERS = {
@@ -240,6 +255,10 @@ def _project(world: WorldState) -> dict[str, Any]:
         "alliance_fund_spent_purposes": list(
             getattr(world, "alliance_fund_spent_purposes", None) or []
         ),
+        "alliance_last_contributors": list(
+            getattr(world, "alliance_last_contributors", None) or []
+        ),
+        "alliance_membership": _alliance_membership_ui(world),
         # remaining purpose slots this tick (compat / purse count)
         "alliance_fund_actions_left": max(
             0,
