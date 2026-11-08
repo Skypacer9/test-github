@@ -888,11 +888,11 @@
     #panel-quarterly .dialogue-box .speaker { font-size: 0.65rem; margin-bottom: 0.1rem; }
     #panel-quarterly .dialogue-box .line { font-size: 0.82rem; line-height: 1.3; }
     #panel-quarterly .log {
-      flex: 1 1 auto;
-      min-height: 0;
-      max-height: none;
+      flex: 1 1 0;
+      min-height: 4rem;
+      max-height: 28vh;
       overflow: auto;
-      margin: 0 0 0.3rem;
+      margin: 0 0 0.25rem;
       font-size: 0.72rem;
       line-height: 1.3;
       padding: 0.3rem 0.4rem;
@@ -941,22 +941,22 @@
     #panel-quarterly .player-log-wrap {
       display: block;
       flex: 0 0 auto;
-      margin-top: 0.35rem;
-      padding-top: 0.3rem;
+      margin: 0 0 0.3rem;
+      padding: 0.25rem 0 0;
       border-top: 1px solid rgba(166,124,82,0.25);
       width: 100%;
     }
     #panel-quarterly .player-log-wrap label {
       display: block;
-      margin-bottom: 0.2rem;
+      margin-bottom: 0.15rem;
       font-size: 0.62rem;
     }
     #panel-quarterly #player-log {
       display: block;
       width: 100%;
-      min-height: 6.5rem;
-      max-height: 9rem;
-      height: 7.5rem;
+      min-height: 5.5rem;
+      max-height: 8rem;
+      height: 6.5rem;
       resize: vertical;
       overflow: auto;
       font-size: 0.74rem;
@@ -1139,6 +1139,10 @@
           <div class="line" id="dlg-line">Connecting to the field…</div>
         </div>
         <div class="log" id="log" aria-live="polite"></div>
+        <div class="player-log-wrap">
+          <label for="player-log">Player Log · Shadow Actions</label>
+          <textarea id="player-log" readonly placeholder="Consequence lines and shadow attacks appear here…"></textarea>
+        </div>
 
         <div class="actions">
           <button class="cmd primary" id="btn-advance" type="button">Advance Quarter</button>
@@ -1181,11 +1185,6 @@
           <button class="cmd" id="btn-af-agri" type="button">Agriculture</button>
           <button class="cmd" id="btn-af-build" type="button">Construction</button>
           <button class="cmd" id="btn-af-mil" type="button">Military</button>
-        </div>
-
-        <div class="player-log-wrap">
-          <label for="player-log">Player Log · Shadow Actions</label>
-          <textarea id="player-log" readonly placeholder="Consequence lines and shadow attacks appear here…"></textarea>
         </div>
         <details class="more-logs">
           <summary>Cultural chronicle</summary>
