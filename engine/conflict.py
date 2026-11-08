@@ -832,34 +832,36 @@ def run_autonomous_conflicts(world: "WorldState") -> list[dict[str, Any]]:
     return results
 
 
-def civil_war_check(world: "WorldState", target_id: str, *, risk: float = 0.22) -> str | None:
-    """Mediation failure risk → civil war (viability + resource hit)."""
+def civil_war_check(world: "WorldState", target_id: str, *, risk: float = 0.12) -> str | None:
+    """Mediation friction risk → mild cool-off (not a despair spiral).
+
+    Floors grain/treasury/viability above DESPERATION_PCT so repeated Broker
+    Mediation cannot raid a court into Desperate stance.
+    """
     ensure_econ_fields(world)
     ag = world.agents.get(target_id)
     if not _alive(ag):
         return None
-    p = risk + 0.25 * float(ag.state.resentment) + 0.15 * float(ag.state.status_threat)
+    p = min(0.35, risk + 0.12 * float(ag.state.resentment) + 0.08 * float(ag.state.status_threat))
     roll = ((world.tick * 17 + sum(ord(c) for c in target_id) * 13) % 100) / 100.0
     if roll > p:
         return None
-    hit = 18.0 + 10.0 * float(ag.state.resentment)
-    ag.viability = max(0.0, float(ag.viability) - hit)
-    ag.grain = max(0.0, float(ag.grain) - 10.0)
-    ag.treasury = max(0.0, float(ag.treasury) - 10.0)
-    ag.state.resentment = min(1.0, float(ag.state.resentment) + 0.12)
+    # Mild hit only — never push through desperation floor
+    floor = DESPERATION_PCT + 2.0
+    hit = min(8.0, 4.0 + 4.0 * float(ag.state.resentment))
+    ag.viability = max(floor, float(ag.viability) - hit)
+    ag.grain = max(floor, float(ag.grain) - 4.0)
+    ag.treasury = max(floor, float(ag.treasury) - 4.0)
+    ag.state.resentment = min(1.0, float(ag.state.resentment) + 0.06)
+    # Explicitly clear desperation if resources stayed above the floor
+    if resource_pool(ag) >= DESPERATION_PCT and float(ag.viability) >= DESPERATION_PCT:
+        ag.desperate = False
+        if ag.stance_mode == "desperate":
+            ag.stance_mode = "coalition"
     note = (
-        f"Shadow: Mediation failure — civil war in {ag.name}; "
-        f"viability → {ag.viability:.0f}"
+        f"Shadow: Mediation friction in {ag.name} — cool-off "
+        f"(viability → {ag.viability:.0f}; no despair spiral)"
     )
-    if float(ag.viability) <= 0.0:
-        nbrs = [
-            n
-            for n in NEIGHBORS.get(target_id, ())
-            if n in world.agents and _alive(world.agents[n])
-        ]
-        by = max(nbrs, key=lambda n: float(world.agents[n].viability)) if nbrs else "qin"
-        annex_state(world, target_id, by)
-        note += f" — ANNEXED by {world.agents[by].name}"
-    world.append_log(note, event_id="civil_war", actor=target_id, action="civil_war")
+    world.append_log(note, event_id="mediation_friction", actor=target_id, action="cool_off")
     _player_log(world, f"[t={world.tick}] {note}")
     return note

@@ -293,7 +293,8 @@ PACKET_CATALOG: dict[str, BeliefPacket] = {
                 "starve_levy_for_private_house",
             ],
             ally_criteria=["fiscal_administrators", "hegemonic_partners", "seasonal_planners"],
-            legitimacy_source=["qi_hegemonic_order", "wealth_and_arms", "guanzi_technics", "timely_dao_of_qi"],
+            # qi_hegemonic_order = Guanzi/Linzi fiscal–mercantile hegemony (Qi), never Qin conquest
+            legitimacy_source=["qi_linzi_mercantile_order", "wealth_and_arms", "guanzi_technics", "timely_dao_of_qi"],
         ),
         compatibility=["guanzi", "legalist_fa", "dao_guodian", "huang_lao", "lineage_shi", "tianxia_da_yitong"],
         blend_of=["legalist_fa", "dao_guodian"],

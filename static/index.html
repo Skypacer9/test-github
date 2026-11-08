@@ -417,6 +417,19 @@
       border: 1px solid rgba(196,163,90,0.4);
       background: rgba(0,0,0,0.22);
     }
+    .offensive-box {
+      display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;
+      width: 100%;
+      margin: 0.15rem 0 0.35rem;
+      padding: 0.45rem 0.5rem;
+      border: 1px solid rgba(196, 90, 70, 0.65);
+      background: rgba(60, 22, 14, 0.45);
+      border-radius: 4px;
+    }
+    .offensive-box .cmd.danger {
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
     .player-invest select {
       background: #1a140e; color: var(--ws-paper); border: 1px solid rgba(196,163,90,0.45);
       padding: 0.35rem 0.5rem; font-size: 0.8rem;
@@ -1338,6 +1351,13 @@
           <div class="player-purse">Player purse — Political Capital <b id="pc-val">100</b> · Treasury <b id="pt-val">100</b></div>
           <div class="player-purse">Alliance joint fund — Grain <b id="af-g">0</b> · Treasury <b id="af-t">0</b></div>
           <div class="player-purse">Actions this quarter — Invest <b id="invest-left">1</b>/1 · Alliance <b id="alliance-left">1</b>/1 · Intervene <b id="intervene-left">1</b>/1 · Offensive <b id="offensive-left">3</b>/3 · Fund purposes <b id="af-left">4</b>/4</div>
+          <div class="offensive-box" id="offensive-box">
+            <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%">Offensive — who attacks whom</span>
+            <select id="off-attacker" aria-label="Attacker state"></select>
+            <select id="off-target" aria-label="Target state"></select>
+            <button class="cmd danger" id="btn-offensive" type="button">Launch Offensive</button>
+            <div class="player-purse" id="off-capacity-line" style="width:100%">Pick attacker — residual front capacity appears here.</div>
+          </div>
           <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase">Invest</span>
           <select id="invest-target" aria-label="Target state">
             <option value="chu">Chu</option>
@@ -1350,11 +1370,6 @@
           <button class="cmd" id="btn-fund" type="button">Fund Military</button>
           <button class="cmd" id="btn-grain" type="button">Send Grain</button>
           <button class="cmd" id="btn-mediate" type="button">Broker Mediation</button>
-          <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%;margin-top:0.35rem">Offensive</span>
-          <select id="off-attacker" aria-label="Attacker state"></select>
-          <select id="off-target" aria-label="Target state"></select>
-          <button class="cmd danger" id="btn-offensive" type="button">Launch Offensive</button>
-          <div class="player-purse" id="off-capacity-line" style="width:100%">Pick attacker — residual front capacity appears here.</div>
           <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%;margin-top:0.25rem">Alliance fund spend</span>
           <button class="cmd" id="btn-af-tech" type="button">Tech</button>
           <button class="cmd" id="btn-af-agri" type="button">Agriculture</button>

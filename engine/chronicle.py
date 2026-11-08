@@ -146,8 +146,16 @@ def assess_cultural_pattern(world: Any, *, reason: str | None = None) -> dict[st
         + 0.15 * legalist_n
         + 0.1 * resent
         + 0.22 * ideo_m["legalist"],
-        "mercantile_caution": 0.12 + 0.25 * isol_n + (0.2 if path == "other" else 0.05) + 0.1 * (1.0 - trust)
-        + 0.18 * ideo_m["guanzi"],
+        # Mercantile/Qi-Linzi caution only when Qin force is not already dominating the board
+        "mercantile_caution": (
+            0.12
+            + 0.25 * isol_n
+            + (0.2 if path == "other" else 0.05)
+            + 0.1 * (1.0 - trust)
+            + 0.18 * ideo_m["guanzi"]
+            - (0.35 if path == "qin_path" else 0.0)
+            - (0.2 if pressure >= 75 else 0.0)
+        ),
         "exhausted_stalemate": 0.1
         + (0.4 if path == "stalemate" else 0.05)
         + 0.15 * (1.0 if 40 <= coh < 70 else 0)
@@ -223,7 +231,9 @@ _PACKET_EN_GLOSS: dict[str, str] = {
     "dao_guodian": "Guodian Dao color — weak use, timing, receptivity",
     "ru_li": "li and ren: ritual names that bind power",
     "huang_lao": "Huang-Lao mix — Dao as frame, xingming/fa as tools",
-    "guanzi": "Guanzi technics — grain, workshops, Qi hegemonic order",
+    # "Qi hegemonic" = Guanzi/Linzi mercantile–fiscal pattern (NOT a Qin typo).
+    # Prefer "Linzi mercantile" wording so high Qin force is never miscited as Qi hegemony.
+    "guanzi": "Guanzi technics — Linzi grain, workshops, Qi mercantile–fiscal order",
     "lineage_shi": "lineage honor and ancestral precedent",
     "tianxia_da_yitong": "da-yitong ideal — credible unity without one court swallowing all",
     "chu_patron_client": "Chu patron–client web: hospitality and spokes over central fa",
@@ -257,7 +267,21 @@ def _packet_symbol_bits(world: Any, *, pick: int, limit: int = 2) -> list[str]:
                 tags.extend(list(getattr(ont, "legitimacy_source", None) or [])[:2])
             bit = gloss or anchor
             if not bit and tags:
-                bit = "legitimacy via " + ", ".join(t.replace("_", " ") for t in tags[:2])
+                # Never surface bare "qi hegemonic order" under Qin-path — that reads as a Qin typo
+                safe_tags = [
+                    t for t in tags
+                    if not (
+                        t == "qi_hegemonic_order"
+                        and str(getattr(getattr(world, "meso", None), "pathway_soft", "") or "") == "qin_path"
+                    )
+                ]
+                if safe_tags:
+                    bit = "legitimacy via " + ", ".join(t.replace("_", " ") for t in safe_tags[:2])
+            # Under Qin domination, rephrase Guanzi as Linzi mercantile caution (not Qi conquest hegemony)
+            path = str(getattr(getattr(world, "meso", None), "pathway_soft", "") or "")
+            press = float(getattr(world, "qin_pressure", 0) or 0)
+            if pid == "guanzi" and bit and (path == "qin_path" or press >= 75):
+                bit = "Guanzi residue — Linzi mercantile caution under Qin pressure"
             if bit:
                 scored.append((w, pid, bit))
     if not scored:

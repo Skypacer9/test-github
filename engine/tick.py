@@ -869,8 +869,9 @@ def intervene_many(world: WorldState, targets: list[str]) -> WorldState:
 
 
 # Fraction of each contributor's grain/treasury pooled on quorum success
-ALLIANCE_POOL_FRACTION = 0.15
-# Skip 15% skim when joint fund already substantial (grain+treasury)
+ALLIANCE_POOL_FRACTION = 0.08  # was 0.15 — repeated quorum must not drain into Desperate
+ALLIANCE_SKIM_CAP = 6.0  # max grain or treasury taken per contributor per quorum
+# Skip skim when joint fund already substantial (grain+treasury)
 ALLIANCE_FUND_SKIM_SKIP_TOTAL = 55.0
 
 ALLIANCE_FUND_PURPOSES = ("tech", "agriculture", "construction", "military")
@@ -1062,11 +1063,19 @@ def attempt_alliance(world: WorldState) -> WorldState:
                 f"{ALLIANCE_FUND_SKIM_SKIP_TOTAL:.0f} total) — no re-levy this quorum"
             )
         else:
+            from .conflict import DESPERATION_PCT
+
+            floor = DESPERATION_PCT + 2.0
             for a in contributors:
-                g_take = ALLIANCE_POOL_FRACTION * float(getattr(a, "grain", 0.0))
-                t_take = ALLIANCE_POOL_FRACTION * float(getattr(a, "treasury", 0.0))
-                a.grain = max(0.0, float(a.grain) - g_take)
-                a.treasury = max(0.0, float(a.treasury) - t_take)
+                g0 = float(getattr(a, "grain", 0.0))
+                t0 = float(getattr(a, "treasury", 0.0))
+                g_take = min(ALLIANCE_SKIM_CAP, ALLIANCE_POOL_FRACTION * g0)
+                t_take = min(ALLIANCE_SKIM_CAP, ALLIANCE_POOL_FRACTION * t0)
+                # Never skim a court under the desperation floor
+                g_take = min(g_take, max(0.0, g0 - floor))
+                t_take = min(t_take, max(0.0, t0 - floor))
+                a.grain = max(floor, g0 - g_take)
+                a.treasury = max(floor, t0 - t_take)
                 pooled_g += g_take
                 pooled_t += t_take
             world.alliance_fund_grain = fund_g + pooled_g
@@ -1074,7 +1083,7 @@ def attempt_alliance(world: WorldState) -> WorldState:
             fund_line = (
                 f"Joint fund +grain {pooled_g:.1f} / +treasury {pooled_t:.1f} "
                 f"from {len(contributors)} contributors "
-                f"(pool {ALLIANCE_POOL_FRACTION:.0%} each) → "
+                f"(pool ≤{ALLIANCE_POOL_FRACTION:.0%}/cap {ALLIANCE_SKIM_CAP:.0f}, floor {floor:.0f}) → "
                 f"fund grain={world.alliance_fund_grain:.1f} treasury={world.alliance_fund_treasury:.1f}"
             )
         if not hasattr(world, "alliance_fund_log") or world.alliance_fund_log is None:
@@ -1096,13 +1105,18 @@ def attempt_alliance(world: WorldState) -> WorldState:
         from .chronicle import maybe_write_chronicle
         maybe_write_chronicle(world, reason="alliance", force=True)
     else:
-        world.meso.cohesion = max(0.0, world.meso.cohesion - 8.0)
-        world.qin_pressure = min(100.0, world.qin_pressure + 7.0)
+        # Mild cool-off — not a despair spiral (no resource raid on fail)
+        world.meso.cohesion = max(0.0, world.meso.cohesion - 3.5)
+        world.qin_pressure = min(100.0, world.qin_pressure + 3.0)
         if qi:
-            qi.state.betrayal_memory = min(1.0, qi.state.betrayal_memory + 0.08)
-            qi.intention.current = "withhold"
+            qi.state.betrayal_memory = min(1.0, qi.state.betrayal_memory + 0.03)
+            qi.state.resentment = min(1.0, float(qi.state.resentment) + 0.04)
+            # Soft withhold nudge only if not already sticky-cooperate
+            if qi.intention.current == "cooperate" and world.tick >= int(qi.intention.sticky_until or 0):
+                qi.intention.current = "withhold"
+                qi.intention.sticky_until = world.tick + 1
         if chu:
-            chu.state.resentment = min(1.0, chu.state.resentment + 0.06)
+            chu.state.resentment = min(1.0, chu.state.resentment + 0.04)
         world.meso.quorum_ok = False
         fail_bits = []
         if not psych_ok:
@@ -1113,13 +1127,13 @@ def attempt_alliance(world: WorldState) -> WorldState:
             fail_bits.append(f"M2 {tech_why}")
         world.append_log(
             (
-                f"Alliance attempt fails: {'; '.join(fail_bits)}. "
-                f"cohesion {world.meso.cohesion:.0f}; "
-                f"qin_mil_adv={world.world.qin_mil_advantage:+.2f}. Quake risk up."
+                f"Alliance attempt cools off: {'; '.join(fail_bits)}. "
+                f"cohesion {world.meso.cohesion:.0f}; mild resentment — no despair skim. "
+                f"qin_mil_adv={world.world.qin_mil_advantage:+.2f}."
             ),
             event_id="alliance",
             action="quorum_fail",
-            dials_fired=["quorum", "m2"],
+            dials_fired=["quorum", "m2", "resentment"],
         )
 
     world.recompute_meso()
