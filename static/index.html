@@ -790,6 +790,17 @@
     .faction .meter.weight-meter label span {
       color: var(--ws-gold-bright);
     }
+    .faction .crafts {
+      margin: 0.15rem 0 0.25rem;
+      font-size: 0.6rem;
+      line-height: 1.25;
+      color: var(--ws-paper-dim);
+      min-height: 1.5em;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
     .court-dossier {
       margin: 0 0 0.4rem;
       padding: 0.4rem 0.5rem 0.45rem;
@@ -811,17 +822,35 @@
     }
     .court-dossier-grid {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 0.45rem 0.65rem;
-      font-size: 0.7rem;
-      line-height: 1.35;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.45rem 0.9rem;
+      font-size: 0.72rem;
+      line-height: 1.4;
       color: var(--ws-paper);
     }
-    @media (max-width: 1280px) {
-      .court-dossier-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    }
     @media (max-width: 900px) {
-      .court-dossier-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .court-dossier-grid { grid-template-columns: 1fr; }
+    }
+    .court-dossier .grounding {
+      grid-column: 1 / -1;
+      margin-top: 0.15rem;
+      padding-top: 0.35rem;
+      border-top: 1px solid rgba(166,124,82,0.22);
+      font-size: 0.62rem;
+      color: var(--ws-paper-dim);
+      line-height: 1.35;
+    }
+    .court-dossier-head .dossier-close {
+      margin-left: auto;
+      padding: 0.2rem 0.65rem;
+      font-size: 0.72rem;
+      border-color: rgba(92,200,232,0.45);
+      color: var(--ws-electric, #5cc8e8);
+      background: rgba(0,0,0,0.35);
+    }
+    .court-dossier-head .dossier-close:hover {
+      border-color: var(--ws-electric, #5cc8e8);
+      color: var(--ws-paper);
     }
     .court-dossier-grid .dcol h4 {
       margin: 0 0 0.2rem; font-family: Cinzel, serif; font-size: 0.62rem;
@@ -1208,15 +1237,15 @@
     </header>
 
     <section class="panel field-panel">
-      <h2>Field · Seven States <span class="field-click-hint">click a state · production, manpower regen, geo, alliances</span></h2>
+      <h2>Field · Seven States <span class="field-click-hint">click a state to inspect · click again / Esc / Close to dismiss</span></h2>
       <div class="factions" id="factions">
         <!-- cards filled by JS for Qin Chu Qi Zhao Han Wei Yan -->
       </div>
       <div class="court-dossier" id="court-dossier" hidden>
         <div class="court-dossier-head">
-          <strong id="dossier-title">Court dossier</strong>
-          <span class="dossier-hint">Production · manpower regen · demographics · geo · tech · trust</span>
-          <button type="button" class="cmd ghost" id="btn-dossier-close">Close</button>
+          <strong id="dossier-title">Court readout</strong>
+          <span class="dossier-hint">On demand only — dismiss anytime</span>
+          <button type="button" class="cmd dossier-close" id="btn-dossier-close" title="Close readout (Esc)">✕ Close</button>
         </div>
         <div class="court-dossier-grid" id="dossier-body"></div>
       </div>
@@ -1512,7 +1541,7 @@
           `<h3 id="name-${id}">${meta.name}</h3></div>` +
           `<div class="stance" id="stance-${id}">—</div>` +
           `<div class="warn-desperation">Desperate — raiding for grain</div>` +
-          `<div class="meter scale-meter"><label>Population <span id="v-${id}-pop">—</span></label>` +
+          `<div class="meter scale-meter"><label>Pop scale <span id="v-${id}-pop">—</span></label>` +
             `<div class="bar"><i id="b-${id}-pop"></i></div></div>` +
           `<div class="meter scale-meter"><label>Manpower <span id="v-${id}-man">—</span></label>` +
             `<div class="bar"><i id="b-${id}-man"></i></div></div>` +
@@ -1520,12 +1549,9 @@
             `<div class="bar"><i id="b-${id}-via"></i></div></div>` +
           `<div class="meter"><label>Grain · Treasury <span id="v-${id}-resrc">—</span></label>` +
             `<div class="bar"><i id="b-${id}-resrc"></i></div></div>` +
-          `<div class="meter weight-meter"><label>Force weight <span id="v-${id}-force">—</span></label>` +
+          `<div class="meter weight-meter"><label>Force <span id="v-${id}-force">—</span></label>` +
             `<div class="bar"><i id="b-${id}-force"></i></div></div>` +
-          `<div class="meter"><label>Mil tech <span id="v-${id}-mil">—</span></label>` +
-            `<div class="bar"><i id="b-${id}-mil"></i></div></div>` +
-          `<div class="meter"><label>Tech adopt <span id="v-${id}-tech">—</span></label>` +
-            `<div class="bar"><i id="b-${id}-tech"></i></div></div>` +
+          `<div class="crafts" id="crafts-${id}">crafts —</div>` +
           `<div class="meter"><label>Resentment <span id="v-${id}-res">0</span></label>` +
             `<div class="bar"><i id="b-${id}-res"></i></div></div>` +
           fearMeter;
@@ -1548,6 +1574,11 @@
     }
 
     function openCourtDossier(id) {
+      // Same card again → dismiss; Field stays clean unless you ask.
+      if (dossierStateId === id) {
+        closeCourtDossier();
+        return;
+      }
       dossierStateId = id;
       FIELD_IDS.forEach((fid) => {
         const card = $("card-" + fid);
@@ -1579,6 +1610,16 @@
       return Math.max(0, Math.min(1, m * p));
     }
 
+    const COURT_GROUNDING = {
+      qin: "里耶秦简 + 睡虎地秦简 — household/上计 machine; grain-forward extract (ordinal ranks, not census).",
+      chu: "包山楚简 — patronage / lineage adjudication; wide pop, weaker uniform levy.",
+      qi: "临淄 mint + 《管子》轻重 — commerce / monetization ideal; wealth levy, not Shang Yang mass fa.",
+      zhao: "Thin scaffold — Sanjin workshop/coin gloss only; no polity census dump.",
+      han: "Thin scaffold — 新郑 workshop gloss; smallest pop ordinal among seven.",
+      wei: "Thin scaffold — Sanjin craft / coin intensity; mid extract ordinal.",
+      yan: "Thin scaffold — 燕下都明刀 coin intensity; mid-low levy/urban.",
+    };
+
     function signedFlow(v, digits) {
       const n = Number(v);
       if (!Number.isFinite(n)) return "—";
@@ -1587,6 +1628,43 @@
       if (n > 0) return "+" + body;
       if (n < 0) return "−" + body;
       return body;
+    }
+
+    function ordinalRank(s, keyPath, id) {
+      // Relative word among the seven — avoids fake-precise percentages.
+      const courts = ((s && s.demographics) || {}).courts || {};
+      const ecos = ((s && s.court_economy) || {}).courts || {};
+      const agents = (s && s.agents) || {};
+      const m2 = (s && s.m2) || {};
+      const vals = FIELD_IDS.map((fid) => {
+        let v = NaN;
+        if (keyPath === "population" || keyPath === "levy_base" || keyPath === "satisfaction"
+          || keyPath === "urban_share" || keyPath === "monetization_index"
+          || keyPath === "registration_intensity" || keyPath === "available_manpower") {
+          v = Number((courts[fid] || {})[keyPath]);
+        } else if (keyPath === "production_power" || keyPath === "manpower" || keyPath === "levy_extract") {
+          v = Number((ecos[fid] || {})[keyPath]);
+        } else if (keyPath === "force") {
+          const mil = Number(((m2.military || {})[fid] != null ? m2.military[fid] : (agents[fid] || {}).military));
+          const man = Number((ecos[fid] || {}).manpower != null ? ecos[fid].manpower : (courts[fid] || {}).available_manpower);
+          v = forceWeight(mil, man);
+        } else if (keyPath === "mil_tech") {
+          v = Number((m2.military || {})[fid] != null ? m2.military[fid] : (agents[fid] || {}).military);
+        } else if (keyPath === "tech_adopt") {
+          v = Number((m2.adoption_mean || {})[fid] != null ? m2.adoption_mean[fid] : (agents[fid] || {}).tech_adopt);
+        } else if (keyPath === "yield") {
+          v = Number((agents[fid] || {}).geographic_yield);
+        }
+        return { fid, v: Number.isFinite(v) ? v : -Infinity };
+      }).sort((a, b) => b.v - a.v);
+      const place = vals.findIndex((row) => row.fid === id);
+      if (place < 0 || !Number.isFinite(vals[place].v) || vals[place].v === -Infinity) return "—";
+      const n = vals.length;
+      if (place === 0) return "1st of 7";
+      if (place === 1) return "2nd of 7";
+      if (place === 2) return "3rd of 7";
+      if (place >= n - 2) return (place + 1) + "th · low";
+      return (place + 1) + "th · mid";
     }
 
     function paintCourtDossier(s, id) {
@@ -1603,101 +1681,86 @@
       const demo = (((s.demographics || {}).courts) || {})[id] || {};
       const eco = (((s.court_economy || {}).courts) || {})[id] || {};
       const geo = (((s.m4 || {}).by_state) || {})[id] || [];
-      const m2 = s.m2 || {};
-      const milMap = m2.military || {};
-      const adoptMap = m2.adoption_mean || {};
-      const logistics = m2.logistics || {};
-      const levyTech = m2.levy_tech || {};
-      const siege = m2.siege || {};
       const trust = s.trust || {};
       const packets = ag.packets || ag.packet_views || [];
-      const mil = milMap[id] != null ? milMap[id] : ag.military;
-      const man = eco.manpower != null ? eco.manpower : demo.available_manpower;
-      const fw = forceWeight(mil, man);
       const trustRows = Object.entries(trust)
         .filter(([k]) => k.startsWith(id + "->") || k.endsWith("->" + id))
         .sort((a, b) => Number(b[1]) - Number(a[1]))
-        .slice(0, 8);
-
-      title.textContent = meta.name + " · court dossier";
-      const prodLis = [
-        ["Production power", Number.isFinite(Number(eco.production_power))
-          ? Number(eco.production_power).toFixed(2) + " /Q"
-          : "—"],
-        ["Grain income", signedFlow(eco.grain_income_q) + " /Q"],
-        ["Treasury income", signedFlow(eco.treasury_income_q) + " /Q"],
-        ["Geographic yield", fmt01(eco.geographic_yield != null ? eco.geographic_yield : ag.geographic_yield)],
-        ["Grain stock", Number.isFinite(Number(eco.grain_stock)) ? Math.round(Number(eco.grain_stock)) : (Number.isFinite(Number(ag.grain)) ? Math.round(Number(ag.grain)) : "—")],
-        ["Treasury stock", Number.isFinite(Number(eco.treasury_stock)) ? Math.round(Number(eco.treasury_stock)) : (Number.isFinite(Number(ag.treasury)) ? Math.round(Number(ag.treasury)) : "—")],
-        ["Viability regen", signedFlow(eco.viability_regen_q, 2) + " /Q"],
-        ["Bonuses", [
-          eco.rice_bonus ? "Chu rice" : null,
-          eco.fa_bonus ? "Qin fa" : null,
-          eco.pressure_tax ? "Qin-pressure tax" : null,
-          eco.desperate ? "Desperate" : null,
-          eco.annexed ? "Annexed" : null,
-        ].filter(Boolean).join(" · ") || "—"],
-      ].map(([k, v]) => `<li><span>${esc(k)}</span><span>${esc(v)}</span></li>`).join("");
-
-      const demoLis = [
-        ["Population", fmt01(demo.population)],
-        ["Manpower now", fmt01(man)],
-        ["Manpower target", fmt01(eco.manpower_target)],
-        ["Manpower gap", signedFlow(eco.manpower_gap, 3)],
-        ["Regen rate λ", Number.isFinite(Number(eco.manpower_regen_rate))
-          ? Number(eco.manpower_regen_rate).toFixed(3)
-          : "—"],
-        ["Manpower Δ /Q", signedFlow(eco.manpower_delta_q, 4)],
-        ["Levy extract", fmt01(eco.levy_extract)],
-        ["Satisfaction", fmt01(demo.satisfaction)],
-        ["Levy base", fmt01(demo.levy_base)],
-        ["Urban share", fmt01(demo.urban_share)],
-        ["Monetization", fmt01(demo.monetization_index)],
-        ["Registration", fmt01(demo.registration_intensity)],
-        ["Source", demo.source_tier || "—"],
-      ].map(([k, v]) => `<li><span>${esc(k)}</span><span>${esc(v)}</span></li>`).join("");
-
-      const geoLis = (Array.isArray(geo) ? geo : []).slice(0, 5).map((g) =>
-        `<li><span>${esc(g.label || g.id || "node")}</span><span>` +
-        `${esc(g.kind || "")} · def ${fmt01(g.defense_mod)} · march ${fmt01(g.march_cost)} · levy ${fmt01(g.levy_mod)}</span></li>`
-      ).join("") || `<li><span>No geo nodes</span><span>—</span></li>`;
-
-      const techLis = [
-        ["Force weight", fmt01(fw) + " (mil×manpower)"],
-        ["Mil tech", fmt01(mil)],
-        ["Tech adoption", fmt01(adoptMap[id] != null ? adoptMap[id] : ag.tech_adopt)],
-        ["Logistics", fmt01(logistics[id])],
-        ["Levy tech", fmt01(levyTech[id])],
-        ["Siege", fmt01(siege[id])],
-        ["Qin mil advantage", (Number.isFinite(Number(s.qin_mil_advantage))
-          ? ((Number(s.qin_mil_advantage) >= 0 ? "+" : "") + Number(s.qin_mil_advantage).toFixed(2))
-          : "—")],
-        ["Tech quorum", ((s.tech_coupling || {}).tech_quorum_ok ? "OK" : "fail")],
-      ].map(([k, v]) => `<li><span>${esc(k)}</span><span>${esc(v)}</span></li>`).join("");
-
-      const allyLis = trustRows.map(([k, v]) =>
-        `<li><span>${esc(k)}</span><span>${esc(fmt01(v))}</span></li>`
-      ).join("") || `<li><span>No dyads</span><span>—</span></li>`;
-      const bloc = ag.bloc === "qin" ? "Qin bloc" : "Anti-Qin coalition seat";
-      const pkt = (packets || []).slice(0, 5).map((p) => {
+        .slice(0, 3);
+      const allies = trustRows
+        .map(([k, v]) => {
+          const other = k.startsWith(id + "->") ? k.split("->")[1] : k.split("->")[0];
+          const warm = Number(v) >= 0.6 ? "warm" : Number(v) >= 0.4 ? "cool" : "cold";
+          return (FIELD_META[other] || { name: other }).name + " " + warm;
+        })
+        .join(" · ") || "thin ties";
+      const geoNames = (Array.isArray(geo) ? geo : []).slice(0, 3)
+        .map((g) => g.label || g.id)
+        .join(" · ") || "no nodes";
+      const pkt = (packets || []).slice(0, 3).map((p) => {
         if (typeof p === "string") return p;
-        return p.id || p.name || p.label || JSON.stringify(p);
-      }).join(", ") || "—";
+        return p.id || p.name || p.label || "";
+      }).filter(Boolean).join(", ") || "—";
+      const tier = demo.source_tier || "placeholder";
+      const gap = Number(eco.manpower_gap);
+      const manTrend = !Number.isFinite(gap) ? "—"
+        : Math.abs(gap) < 0.02 ? "near target"
+        : gap > 0 ? ("recovering +" + Math.abs(Number(eco.manpower_delta_q) || 0).toFixed(3) + "/Q")
+        : ("draining " + signedFlow(eco.manpower_delta_q, 3) + "/Q");
+      const bonuses = [
+        eco.rice_bonus ? "Chu rice" : null,
+        eco.fa_bonus ? "Qin fa" : null,
+        eco.pressure_tax ? "pressure tax" : null,
+        eco.desperate ? "Desperate" : null,
+        eco.annexed ? "Annexed" : null,
+      ].filter(Boolean).join(" · ") || "none";
+
+      const roster = (((s.m2 || {}).by_state) || {})[id] || {};
+      const fielded = Array.isArray(roster.fielded) ? roster.fielded : [];
+      const known = Array.isArray(roster.known) ? roster.known : [];
+      const craftLine = fielded.length
+        ? fielded.slice(0, 4).join(" · ")
+        : (known.length ? ("known only: " + known.slice(0, 3).join(" · ")) : "none fielded");
+
+      title.textContent = meta.name + " · court readout";
+      const strengthLis = [
+        ["Production /Q", Number.isFinite(Number(eco.production_power))
+          ? Number(eco.production_power).toFixed(1) + "  ·  " + ordinalRank(s, "production_power", id)
+          : "—"],
+        ["Grain · treasury",
+          (Number.isFinite(Number(eco.grain_stock)) ? Math.round(Number(eco.grain_stock)) : "—")
+          + " / "
+          + (Number.isFinite(Number(eco.treasury_stock)) ? Math.round(Number(eco.treasury_stock)) : "—")
+          + "   (+"
+          + (Number.isFinite(Number(eco.grain_income_q)) ? Number(eco.grain_income_q).toFixed(1) : "?")
+          + "g · +"
+          + (Number.isFinite(Number(eco.treasury_income_q)) ? Number(eco.treasury_income_q).toFixed(1) : "?")
+          + "t /Q)"],
+        ["Yield · force", ordinalRank(s, "yield", id) + " · " + ordinalRank(s, "force", id)],
+        ["Fielded crafts", craftLine],
+        ["Bonuses", bonuses],
+      ].map(([k, v]) => `<li><span>${esc(k)}</span><span>${esc(v)}</span></li>`).join("");
+
+      const peopleLis = [
+        ["Pop · manpower", ordinalRank(s, "population", id) + " · " + ordinalRank(s, "available_manpower", id)],
+        ["Manpower trend", manTrend],
+        ["Levy · register", ordinalRank(s, "levy_base", id) + " · " + ordinalRank(s, "registration_intensity", id)],
+        ["Mood · urban", ordinalRank(s, "satisfaction", id) + " · " + ordinalRank(s, "urban_share", id)],
+      ].map(([k, v]) => `<li><span>${esc(k)}</span><span>${esc(v)}</span></li>`).join("");
+
+      const placeLis = [
+        ["Geography", geoNames],
+        ["Bloc · stance", (ag.bloc === "qin" ? "Qin" : "Anti-Qin") + " · " + (ag.intention_label || ag.intention || "—")],
+        ["Closest ties", allies],
+        ["Belief packets", pkt],
+      ].map(([k, v]) => `<li><span>${esc(k)}</span><span>${esc(v)}</span></li>`).join("");
 
       body.innerHTML =
-        `<div class="dcol"><h4>Production</h4><ul>${prodLis}</ul>` +
-          `<div class="note">${esc((s.court_economy || {}).honesty || "Placeholder quarterly flows")}</div></div>` +
-        `<div class="dcol"><h4>Manpower · demography</h4><ul>${demoLis}</ul>` +
-          `<div class="note">Δ = λ × gap · saturating approach to extractable target</div></div>` +
-        `<div class="dcol"><h4>Geography (M4)</h4><ul>${geoLis}</ul>` +
-          `<div class="note">${esc((s.m4 || {}).honesty || "Coarse geo table")}</div></div>` +
-        `<div class="dcol"><h4>Tech · military</h4><ul>${techLis}</ul>` +
-          `<div class="note">Mil tech is intensity — force weight scales by manpower.</div></div>` +
-        `<div class="dcol"><h4>Alliances · trust</h4><ul>` +
-          `<li><span>Bloc</span><span>${esc(bloc)}</span></li>` +
-          `<li><span>Stance</span><span>${esc(ag.intention_label || ag.intention || "—")}</span></li>` +
-          allyLis +
-          `</ul><div class="note">Packets: ${esc(pkt)}</div></div>`;
+        `<div class="dcol"><h4>Strength</h4><ul>${strengthLis}</ul></div>` +
+        `<div class="dcol"><h4>People</h4><ul>${peopleLis}</ul></div>` +
+        `<div class="dcol"><h4>Place · ties</h4><ul>${placeLis}</ul></div>` +
+        `<div class="grounding"><strong>${esc(tier)}</strong> · ${esc(COURT_GROUNDING[id] || "placeholder ordinals")}` +
+          ` Ranks only — not census %; crafts are TECH_DAG nodes (known ≠ fielded). Magnitudes still PLACEHOLDER.</div>`;
       box.hidden = false;
     }
 
@@ -2047,7 +2110,24 @@ function renderProfile(prof) {
       }
     }
 
-    function agentMeter(id, ag, demo) {
+    function scaleWord(place, n) {
+      if (place < 0) return "—";
+      if (place === 0) return "widest";
+      if (place === 1) return "large";
+      if (place === 2) return "upper";
+      if (place >= n - 2) return "thin";
+      return "mid";
+    }
+
+    function relativePlace(values, id) {
+      const rows = FIELD_IDS.map((fid) => ({
+        fid,
+        v: Number.isFinite(Number(values[fid])) ? Number(values[fid]) : -Infinity,
+      })).sort((a, b) => b.v - a.v);
+      return rows.findIndex((r) => r.fid === id);
+    }
+
+    function agentMeter(id, ag, demo, eco, techRoster) {
       if (!ag) return;
       const card = $("card-" + id);
       const annexed = !!ag.annexed;
@@ -2069,13 +2149,36 @@ function renderProfile(prof) {
       else if (desperate) stance = (stance + " · Desperate");
       else if (ag.stance_mode === "optimizing") stance = (stance + " · Optimizing");
       setText("stance-" + id, stance);
-      const d = demo || {};
-      const pop = Number(d.population);
-      const man = Number(d.available_manpower);
-      setText("v-" + id + "-pop", Number.isFinite(pop) ? (Math.round(pop * 100) + "%") : "—");
-      bar("b-" + id + "-pop", Number.isFinite(pop) ? pop : 0);
-      setText("v-" + id + "-man", Number.isFinite(man) ? (Math.round(man * 100) + "%") : "—");
-      bar("b-" + id + "-man", Number.isFinite(man) ? man : 0);
+
+      const courts = ((lastFieldState || {}).demographics || {}).courts || {};
+      const popMap = {};
+      const manMap = {};
+      const forceMap = {};
+      FIELD_IDS.forEach((fid) => {
+        const c = courts[fid] || (fid === id ? (demo || {}) : {});
+        const e = (((lastFieldState || {}).court_economy || {}).courts || {})[fid] || (fid === id ? (eco || {}) : {});
+        const a = (((lastFieldState || {}).agents || {})[fid]) || (fid === id ? ag : {});
+        popMap[fid] = Number(c.population);
+        manMap[fid] = Number(e.manpower != null ? e.manpower : c.available_manpower);
+        forceMap[fid] = forceWeight(a.military, manMap[fid]);
+      });
+      // Prefer live args for this card
+      if (demo) {
+        popMap[id] = Number(demo.population);
+        manMap[id] = Number((eco && eco.manpower != null) ? eco.manpower : demo.available_manpower);
+      }
+      forceMap[id] = forceWeight(ag.military, manMap[id]);
+
+      const popPlace = relativePlace(popMap, id);
+      const manPlace = relativePlace(manMap, id);
+      const forcePlace = relativePlace(forceMap, id);
+      const pop = popMap[id];
+      const man = manMap[id];
+      setText("v-" + id + "-pop", scaleWord(popPlace, FIELD_IDS.length));
+      bar("b-" + id + "-pop", Number.isFinite(pop) ? Math.max(0.08, pop) : 0);
+      setText("v-" + id + "-man", scaleWord(manPlace, FIELD_IDS.length));
+      bar("b-" + id + "-man", Number.isFinite(man) ? Math.max(0.08, man) : 0);
+
       const via = Number(ag.viability);
       setText("v-" + id + "-via", Number.isFinite(via) ? Math.round(via) : "—");
       bar("b-" + id + "-via", Number.isFinite(via) ? via / 100 : 0);
@@ -2085,15 +2188,21 @@ function renderProfile(prof) {
         (Number.isFinite(g) ? Math.round(g) : "—") + " / " +
         (Number.isFinite(t) ? Math.round(t) : "—"));
       bar("b-" + id + "-resrc", Number.isFinite(pool) ? pool / 100 : 0);
-      const mil = Number(ag.military);
-      setText("v-" + id + "-mil", Number.isFinite(mil) ? (Math.round(mil * 100) + "%") : "—");
-      bar("b-" + id + "-mil", Number.isFinite(mil) ? mil : 0);
-      const fw = forceWeight(mil, man);
-      setText("v-" + id + "-force", Number.isFinite(fw) ? (Math.round(fw * 100) + "%") : "—");
-      bar("b-" + id + "-force", Number.isFinite(fw) ? fw : 0);
-      const techA = Number(ag.tech_adopt);
-      setText("v-" + id + "-tech", Number.isFinite(techA) ? (Math.round(techA * 100) + "%") : "—");
-      bar("b-" + id + "-tech", Number.isFinite(techA) ? techA : 0);
+
+      const fw = forceMap[id];
+      setText("v-" + id + "-force", scaleWord(forcePlace, FIELD_IDS.length));
+      bar("b-" + id + "-force", Number.isFinite(fw) ? Math.max(0.08, fw) : 0);
+
+      const craftsEl = $("crafts-" + id);
+      if (craftsEl) {
+        const roster = techRoster || {};
+        const fielded = Array.isArray(roster.fielded) ? roster.fielded : [];
+        craftsEl.textContent = fielded.length
+          ? ("Fielded: " + fielded.slice(0, 2).join(" · ") + (fielded.length > 2 ? "…" : ""))
+          : "Fielded crafts: none yet";
+        craftsEl.title = fielded.join(" · ") || "No TECH_DAG nodes above adoption floor";
+      }
+
       const res = ag.resentment ?? 0;
       const fear = ag.fear_of_qin ?? 0;
       setText("v-" + id + "-res", pct(res) + "%");
@@ -2286,7 +2395,9 @@ function renderProfile(prof) {
       lastFieldState = s;
       ensureFactionCards();
       const courts = ((s.demographics || {}).courts) || {};
-      FIELD_IDS.forEach((id) => agentMeter(id, agents[id], courts[id]));
+      const ecos = ((s.court_economy || {}).courts) || {};
+      const techBy = ((s.m2 || {}).by_state) || {};
+      FIELD_IDS.forEach((id) => agentMeter(id, agents[id], courts[id], ecos[id], techBy[id]));
       if (dossierStateId) paintCourtDossier(s, dossierStateId);
 
       if (data.dialogue) {
@@ -2867,7 +2978,19 @@ function renderProfile(prof) {
     }
     ensureFactionCards();
     const btnDossierClose = $("btn-dossier-close");
-    if (btnDossierClose) btnDossierClose.addEventListener("click", closeCourtDossier);
+    if (btnDossierClose) {
+      btnDossierClose.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        closeCourtDossier();
+      });
+    }
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && dossierStateId) {
+        ev.preventDefault();
+        closeCourtDossier();
+      }
+    });
     boot();
   </script>
 </body>
