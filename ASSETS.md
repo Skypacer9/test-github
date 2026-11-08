@@ -86,3 +86,13 @@ UI meters map only to live WorldState fields — no orphan dials:
 
 Portrait slots remain CSS monogram placeholders until CC assets land under ssets/portraits/{qin,chu,qi}.png.
 
+## Figure portraits (WS-57)
+
+Human bust JPGs in `static/portraits/<id>.jpg` — original playtest art.
+
+**Hue by allegiance (not per-person):**
+- Chu court (kaolie, king_you, chunshen, chu_nobility): sage `--ws-chu` / `#6B7F6A`
+- Qin court (zhaoxiang, ying_zheng, li_si): Qin red `--ws-qin` / `#8B3A3A`
+- Qi court (king_jian): teal `--ws-qi` / `#4A7C8C`
+
+Within a court, value/ornament differ; base hue stays with home allegiance. UI portrait-card borders use the same allegiance tokens.

@@ -399,11 +399,12 @@ def _talkable_cast(world: "WorldState") -> list[dict]:
             "label": figure_label_for(fid),
             "role_label": fig.get("role_label"),
             "home": fig.get("home"),
-            "portrait": f"/static/portraits/{fid}.svg",
+            "portrait": f"/static/portraits/{fid}.jpg",
             "talkable": bool(st.get("talkable")),
             "status": st.get("status"),
             "note": st.get("note") or "",
             "era_unlock_bce": fig.get("era_unlock_bce"),
+            "allegiance": fig.get("home"),
         })
     return out
 
