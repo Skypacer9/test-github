@@ -28,7 +28,7 @@ def test_offensive_attacker_and_target_pickers():
     assert w.last_player_offensive.get("attacker") == "chu"
     assert w.last_player_offensive.get("defender") == "qin"
     assert int(w.player_offensive_actions_left) == 2
-    assert int(w.player_offensive_fronts.get("chu", 0)) == 1
+    assert w.player_offensive_fronts.get("chu") == ["qin"]
     # War chill
     assert float(w.trust.get("chu->qin", 1.0)) < before_trust
 
@@ -59,18 +59,23 @@ def test_offensive_soft_cap_and_capacity_refuse():
     assert w.last_player_offensive_error
     assert "capacity" in w.last_player_offensive_error.lower() or "lacks" in w.last_player_offensive_error.lower()
 
-    # Soft global cap 3 — use three different strong attackers (avoids multi-front refuse)
+    # Soft global cap 3 — three different pairs (also distinct targets)
     w2 = new_world()
-    launches = (("chu", "qin"), ("qi", "zhao"), ("zhao", "yan"))
+    launches = (("chu", "qin"), ("qi", "zhao"), ("yan", "qi"))
     for aid, tgt in launches:
-        ag = w2.agents[aid]
-        ag.grain = 95
-        ag.treasury = 95
-        ag.viability = 95
+        for sid in (aid, tgt):
+            ag = w2.agents[sid]
+            ag.grain = 95
+            ag.treasury = 95
+            ag.viability = 95
         player_offensive(w2, aid, tgt)
         assert w2.last_player_offensive_error is None, (aid, tgt, w2.last_player_offensive_error)
     assert int(w2.player_offensive_actions_left) == 0
-    player_offensive(w2, "chu", "qin")
+    # Fourth launch — budget spent (pair uniqueness already used distinct targets)
+    w2.agents["wei"].grain = 95
+    w2.agents["wei"].treasury = 95
+    w2.agents["wei"].viability = 95
+    player_offensive(w2, "wei", "han")
     assert w2.last_player_offensive_error and "budget" in w2.last_player_offensive_error.lower()
     # Advance refreshes soft cap + clears per-court fronts
     tick(w2)
@@ -196,10 +201,10 @@ def test_alliance_offensive_joint_per_court_fronts_no_counter():
     # Each participant burned its OWN front quota (not only Chu)
     fronts = w.player_offensive_fronts
     for aid in atks:
-        assert int(fronts.get(aid, 0)) >= 1, (aid, fronts)
+        assert "qin" in list(fronts.get(aid) or []), (aid, fronts)
     after = res.get("fronts_after") or {}
     for aid in atks:
-        assert int(after.get(aid, 0)) >= 1
+        assert "qin" in list(after.get(aid) or []), (aid, after)
     # Joint activity mildly raises trust among participants
     assert float(w.trust.get("chu->qi", 0.5)) > t0
     assert int(res.get("joint_trust_edges") or 0) >= 1
@@ -225,6 +230,36 @@ def test_alliance_fund_mediation_raises_trust():
     assert w.last_alliance_fund_error is None, w.last_alliance_fund_error
     assert "mediation" in w.alliance_fund_spent_purposes
     assert float(w.trust.get("chu->qi", 0.5)) > t0
+
+
+def test_refuse_stacking_same_pair_and_target_front():
+    """One active front per attacker→target pair and per target — no Chu→Qin×3."""
+    w = new_world()
+    for sid in ("chu", "qi", "zhao"):
+        ag = w.agents[sid]
+        ag.grain = 95
+        ag.treasury = 95
+        ag.viability = 95
+    player_offensive(w, "chu", "qin")
+    assert w.last_player_offensive_error is None, w.last_player_offensive_error
+    assert w.player_offensive_fronts.get("chu") == ["qin"]
+    # Stack same pair — refuse
+    player_offensive(w, "chu", "qin")
+    assert w.last_player_offensive_error
+    assert "front already open" in w.last_player_offensive_error.lower() or "chu→qin" in w.last_player_offensive_error
+    # Same target from another adjacent court — refuse (one active front per target)
+    player_offensive(w, "zhao", "qin")
+    assert w.last_player_offensive_error
+    assert "active front" in w.last_player_offensive_error.lower()
+    # Different target still OK if capacity + adjacency remain
+    player_offensive(w, "chu", "han")
+    assert w.last_player_offensive_error is None, w.last_player_offensive_error
+    assert "han" in list(w.player_offensive_fronts.get("chu") or [])
+    # Advance clears fronts
+    tick(w)
+    assert w.player_offensive_fronts == {}
+    player_offensive(w, "chu", "qin")
+    assert w.last_player_offensive_error is None, w.last_player_offensive_error
 
 
 def test_withholding_barred_from_offensive_and_joint_fronts():

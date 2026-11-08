@@ -388,11 +388,68 @@ def levy_extract(world: "WorldState", aid: str) -> float:
     return max(0.0, min(1.0, 0.55 * levy + 0.45 * mp))
 
 
+def coerce_offensive_fronts(raw: Any) -> dict[str, list[str]]:
+    """Normalize fronts map: attacker → list of target ids opened this quarter.
+
+    Legacy ``{attacker: int}`` counts become opaque placeholders (capacity only).
+    """
+    out: dict[str, list[str]] = {}
+    if not isinstance(raw, dict):
+        return out
+    for k, v in raw.items():
+        aid = str(k).strip().lower()
+        if not aid:
+            continue
+        if isinstance(v, list):
+            seen: list[str] = []
+            for x in v:
+                tid = str(x).strip().lower()
+                if tid and tid not in seen:
+                    seen.append(tid)
+            if seen:
+                out[aid] = seen
+        elif isinstance(v, (int, float)):
+            n = max(0, int(v))
+            if n:
+                out[aid] = [f"_open{i}" for i in range(n)]
+    return out
+
+
+def front_targets_for(world: "WorldState", aid: str) -> list[str]:
+    fronts = coerce_offensive_fronts(getattr(world, "player_offensive_fronts", None))
+    return list(fronts.get(str(aid), []) or [])
+
+
+def active_front_targets(world: "WorldState") -> set[str]:
+    """Targets that already have an active front this quarter (any attacker)."""
+    fronts = coerce_offensive_fronts(getattr(world, "player_offensive_fronts", None))
+    out: set[str] = set()
+    for targets in fronts.values():
+        for tid in targets:
+            if tid and not str(tid).startswith("_open"):
+                out.add(str(tid))
+    return out
+
+
+def front_pair_blocked(world: "WorldState", attacker: str, target: str) -> str | None:
+    """Refuse stacking the same attacker→target (or a second front on the same target)."""
+    aid = str(attacker).strip().lower()
+    tid = str(target).strip().lower()
+    if not aid or not tid:
+        return None
+    if tid in front_targets_for(world, aid):
+        return f"front already open: {aid}→{tid} this quarter"
+    if tid in active_front_targets(world):
+        return f"target {tid} already has an active front this quarter"
+    return None
+
+
 def offensive_capacity(world: "WorldState", aid: str) -> dict[str, Any]:
     """How many simultaneous fronts this court can still open this quarter.
 
     Strong courts (force + levy + grain + viability) may open several fronts;
     weak courts get 0–1. Already-opened fronts this quarter reduce residual.
+    Pair/target uniqueness is enforced separately in player_offensive.
     """
     ensure_econ_fields(world)
     ag = world.agents.get(aid)
@@ -411,6 +468,7 @@ def offensive_capacity(world: "WorldState", aid: str) -> dict[str, Any]:
             "levy": 0.0,
             "grain": 0.0,
             "viability": 0.0,
+            "targets": [],
         }
     force = float(military_strength(world, aid))
     levy = float(levy_extract(world, aid))
@@ -418,6 +476,7 @@ def offensive_capacity(world: "WorldState", aid: str) -> dict[str, Any]:
     treasury = float(ag.treasury)
     via = float(ag.viability)
     intent = str(getattr(getattr(ag, "intention", None), "current", "") or "").strip().lower()
+    opened_targets = front_targets_for(world, aid)
     # Withholding courts (Qi or any) sit out military offensives / joint fronts.
     if intent in ("withhold", "withholding"):
         return {
@@ -425,7 +484,7 @@ def offensive_capacity(world: "WorldState", aid: str) -> dict[str, Any]:
             "alive": True,
             "score": 0.0,
             "max_fronts": 0,
-            "opened": int((getattr(world, "player_offensive_fronts", None) or {}).get(aid, 0) or 0),
+            "opened": len(opened_targets),
             "residual": 0,
             "can_launch": False,
             "force_scale": 0.0,
@@ -436,6 +495,7 @@ def offensive_capacity(world: "WorldState", aid: str) -> dict[str, Any]:
             "grain": round(grain, 1),
             "treasury": round(treasury, 1),
             "viability": round(via, 1),
+            "targets": list(opened_targets),
         }
     score = (
         0.28 * (via / 100.0)
@@ -452,7 +512,7 @@ def offensive_capacity(world: "WorldState", aid: str) -> dict[str, Any]:
         max_fronts = 2
     else:
         max_fronts = 3
-    opened = int((getattr(world, "player_offensive_fronts", None) or {}).get(aid, 0) or 0)
+    opened = len(opened_targets)
     residual = max(0, max_fronts - opened)
     # Stretching a second/third front weakens the spear
     if residual <= 0:
@@ -490,6 +550,7 @@ def offensive_capacity(world: "WorldState", aid: str) -> dict[str, Any]:
         "grain": round(grain, 1),
         "viability": round(via, 1),
         "afford_attack": can_afford_attack(ag),
+        "targets": list(opened_targets),
     }
 
 

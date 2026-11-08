@@ -761,6 +761,28 @@ def player_offensive(
             _append_player_log(world, f"[t={world.tick}] {note}")
             return world
 
+    # One active front per attacker→target pair, and one active front per target.
+    # Refuse stacking Chu→Qin (or any pair) thrice the same quarter — before adjacency
+    # so the player sees the stack refuse clearly.
+    from .conflict import (
+        coerce_offensive_fronts,
+        front_pair_blocked,
+        front_targets_for,
+    )
+
+    pair_err = front_pair_blocked(world, aid, tid)
+    if pair_err:
+        note = f"Offensive failed: {pair_err} — pick another target or Advance"
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+    # Drop allies who already hold this target edge; lead already gated above.
+    attackers = [
+        a
+        for a in attackers
+        if a == aid or tid not in front_targets_for(world, a)
+    ]
+
     # Adjacency: at least one attacker must neighbor the target
     if not any(tid in NEIGHBORS.get(a, ()) for a in attackers):
         note = (
@@ -783,7 +805,8 @@ def player_offensive(
 
     # Capacity: EVERY participating court must have its own residual front.
     # Joint/alliance marches never ride only on the lead's quota — unable peers
-    # are dropped (solo lead may continue); each remaining court burns +1 front.
+    # are dropped (solo lead may continue); each remaining court burns +1 front
+    # toward this target (recorded as attacker→target, not a raw count).
     caps: dict[str, dict] = {}
     force_scales: dict[str, float] = {}
     able: list[str] = []
@@ -828,13 +851,16 @@ def player_offensive(
     world.player_political_capital = pc - pc_cost
     world.player_treasury = tr - tr_cost
     world.player_offensive_actions_left = max(0, left - 1)
-    # Per-court front quota: each participant consumes one of ITS own fronts
-    fronts = dict(getattr(world, "player_offensive_fronts", None) or {})
-    fronts_before = {a: int(fronts.get(a, 0) or 0) for a in attackers}
+    # Per-court front quota: each participant records attacker→target (unique).
+    fronts = coerce_offensive_fronts(getattr(world, "player_offensive_fronts", None))
+    fronts_before = {a: list(fronts.get(a, [])) for a in attackers}
     for a in attackers:
-        fronts[a] = int(fronts.get(a, 0) or 0) + 1
+        lst = list(fronts.get(a, []))
+        if tid not in lst:
+            lst.append(tid)
+        fronts[a] = lst
     world.player_offensive_fronts = fronts
-    fronts_after = {a: int(fronts.get(a, 0) or 0) for a in attackers}
+    fronts_after = {a: list(fronts.get(a, [])) for a in attackers}
 
     res = resolve_joint_attack(world, attackers, tid, force_scales=force_scales)
     if res.get("cancelled"):
@@ -842,8 +868,10 @@ def player_offensive(
         world.player_treasury = min(100.0, float(world.player_treasury) + tr_cost)
         world.player_offensive_actions_left = left
         for a in attackers:
-            fronts[a] = max(0, int(fronts.get(a, 1)) - 1)
-            if fronts[a] <= 0:
+            lst = [t for t in list(fronts.get(a, [])) if t != tid]
+            if lst:
+                fronts[a] = lst
+            else:
                 fronts.pop(a, None)
         world.player_offensive_fronts = fronts
         note = (
@@ -885,7 +913,8 @@ def player_offensive(
     if res.get("betrayal_members"):
         betrayal = f" Ally betrayal spike ({', '.join(res['betrayal_members'])})."
     front_bits = ", ".join(
-        f"{a}:{fronts_before.get(a, 0)}→{fronts_after.get(a, 0)}" for a in attackers
+        f"{a}:{len(fronts_before.get(a, []))}→{len(fronts_after.get(a, []))}({tid})"
+        for a in attackers
     )
     names = "+".join(world.agents[a].name for a in attackers)
     note = (

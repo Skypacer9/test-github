@@ -112,7 +112,8 @@ class WorldState:
     alliance_attempt_actions_left: int = 1
     intervene_actions_left: int = 1
     player_offensive_actions_left: int = 3  # soft player-initiated cap ~2–3/quarter
-    player_offensive_fronts: dict[str, int] = field(default_factory=dict)  # attacker→fronts this quarter
+    # attacker → target ids opened this quarter (one active front per pair / per target)
+    player_offensive_fronts: dict[str, list[str]] = field(default_factory=dict)
     last_player_offensive: dict[str, Any] | None = None
     alliance_fund_spent_purposes: list[str] = field(default_factory=list)
     # Last successful quorum contributor ids — activity signal for joint-fund scale
@@ -240,12 +241,11 @@ class WorldState:
         self.player_offensive_actions_left = max(
             0, min(3, int(getattr(self, "player_offensive_actions_left", 3)))
         )
-        fronts = getattr(self, "player_offensive_fronts", None) or {}
-        if not isinstance(fronts, dict):
-            fronts = {}
-        self.player_offensive_fronts = {
-            str(k): max(0, int(v)) for k, v in fronts.items()
-        }
+        from .conflict import coerce_offensive_fronts
+
+        self.player_offensive_fronts = coerce_offensive_fronts(
+            getattr(self, "player_offensive_fronts", None)
+        )
         spent = getattr(self, "alliance_fund_spent_purposes", None) or []
         if not isinstance(spent, list):
             spent = list(spent)
@@ -342,7 +342,8 @@ class WorldState:
             "intervene_actions_left": int(self.intervene_actions_left),
             "player_offensive_actions_left": int(self.player_offensive_actions_left),
             "player_offensive_fronts": {
-                str(k): int(v) for k, v in (self.player_offensive_fronts or {}).items()
+                str(k): [str(t) for t in (v if isinstance(v, list) else [])]
+                for k, v in (self.player_offensive_fronts or {}).items()
             },
             "last_player_offensive": (
                 dict(self.last_player_offensive)
@@ -471,10 +472,10 @@ class WorldState:
                 if raw.get("player_offensive_actions_left") is not None
                 else 3
             ),
-            player_offensive_fronts={
-                str(k): int(v)
-                for k, v in (raw.get("player_offensive_fronts") or {}).items()
-            },
+            player_offensive_fronts=(
+                # deferred coerce in clamp(); keep raw then normalize
+                dict(raw.get("player_offensive_fronts") or {})
+            ),
             last_player_offensive=(
                 dict(raw["last_player_offensive"])
                 if isinstance(raw.get("last_player_offensive"), dict)

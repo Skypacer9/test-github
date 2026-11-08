@@ -2179,9 +2179,15 @@
       }
       tip += ` Force ${Number(cap.force || 0).toFixed(2)} · levy ${Number(cap.levy || 0).toFixed(2)} · grain ${Math.round(Number(cap.grain) || 0)} · via ${Math.round(Number(cap.viability) || 0)}.`;
       tip += ` Player launches left ${Number.isFinite(launches) ? launches : "—"}/3.`;
+      const openedTargets = Array.isArray(cap.targets) ? cap.targets : [];
+      if (openedTargets.length) {
+        tip += ` Open fronts → ${openedTargets.map((id) => STATE_LABEL[id] || id).join(", ")}.`;
+      }
+      tip += " One front per target (and per attacker pair) this quarter.";
       if (tid) tip += ` Target: ${STATE_LABEL[tid] || tid}.`;
+      const pairTaken = openedTargets.indexOf(tid) >= 0;
       line.textContent = tip;
-      if (btn) btn.disabled = busy || launches <= 0 || !can || !tid;
+      if (btn) btn.disabled = busy || launches <= 0 || !can || !tid || pairTaken;
     }
 
     function meterHtml(key, label, val, idPrefix) {

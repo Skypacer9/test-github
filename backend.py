@@ -241,7 +241,11 @@ def _project(world: WorldState) -> dict[str, Any]:
         "intervene_actions_left": int(getattr(world, "intervene_actions_left", 1)),
         "player_offensive_actions_left": int(getattr(world, "player_offensive_actions_left", 3)),
         "player_offensive_fronts": {
-            str(k): int(v)
+            str(k): [str(t) for t in (v if isinstance(v, list) else [])]
+            for k, v in (getattr(world, "player_offensive_fronts", None) or {}).items()
+        },
+        "player_offensive_front_counts": {
+            str(k): (len(v) if isinstance(v, list) else int(v or 0))
             for k, v in (getattr(world, "player_offensive_fronts", None) or {}).items()
         },
         "last_player_offensive": (
