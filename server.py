@@ -28,6 +28,7 @@ from backend import (
     character_choices,
     character_profile,
     do_player_action,
+    do_player_offensive,
     export_snapshot,
     fresh_run,
     import_snapshot,
@@ -830,6 +831,32 @@ def api_player_action():
     return _invest_response(action, target)
 
 
+@app.post("/api/offensive")
+def api_offensive():
+    """Player Offensive — body: {attacker, target}. Soft cap 3/quarter; court capacity gated."""
+    blocked = _mutate_guard()
+    if blocked:
+        return blocked
+    st = _ensure()
+    body = request.get_json(silent=True) or {}
+    attacker = str(body.get("attacker") or body.get("from") or "").strip().lower()
+    target = str(body.get("target") or body.get("to") or body.get("defender") or "").strip().lower()
+    if not attacker or not target:
+        return jsonify({"ok": False, "error": "attacker and target required"}), 400
+    projected, msgs, err = do_player_offensive(st, attacker, target)
+    pack = _pack(projected, msgs)
+    pack["offensive"] = projected.get("last_player_offensive")
+    pack["player_offensive_actions_left"] = int(
+        projected.get("player_offensive_actions_left") or 0
+    )
+    pack["offensive_capacity"] = projected.get("offensive_capacity") or {}
+    if err:
+        pack["ok"] = False
+        pack["error"] = err
+        return jsonify(pack), 400
+    return jsonify(pack)
+
+
 @app.post("/api/fund_military")
 def api_fund_military():
     blocked = _mutate_guard()
@@ -961,7 +988,7 @@ def main() -> None:
     print(
         "API: /api/state /api/new /api/saves /api/save /api/load /api/advance /api/intervene /api/alliance "
         "/api/alliance_fund /api/player_action /api/fund_military /api/send_grain "
-        "/api/broker_mediation /api/profile /api/counsel /api/talkable"
+        "/api/broker_mediation /api/offensive /api/profile /api/counsel /api/talkable"
     )
     app.run(host=host, port=port, debug=False, use_reloader=False)
 

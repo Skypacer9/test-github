@@ -11,9 +11,21 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-# Agent-store docs/ sits two levels above sim/engine/
-_DOCS = Path(__file__).resolve().parents[2] / "docs"
-_PROFILES_PATH = _DOCS / "big-five-historical-profiles.json"
+def _profiles_path() -> Path:
+    """Resolve big-five JSON across workspace / nested sim / agent-store layouts."""
+    here = Path(__file__).resolve()
+    candidates = [
+        here.parents[1] / "docs" / "big-five-historical-profiles.json",  # /workspace/docs
+        here.parents[2] / "docs" / "big-five-historical-profiles.json",  # store/docs when engine under sim/
+        Path("/cursor/stores/bc-305c7b8b-53d0-43b8-8e39-2dcc47fae6f0/docs/big-five-historical-profiles.json"),
+    ]
+    for p in candidates:
+        if p.is_file():
+            return p
+    return candidates[0]
+
+
+_PROFILES_PATH = _profiles_path()
 
 # Map meso state agents → JSON profile id(s). Blends listed when multiple.
 STATE_PROFILE_MAP: dict[str, list[str]] = {

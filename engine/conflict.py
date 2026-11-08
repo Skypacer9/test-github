@@ -113,6 +113,12 @@ def military_strength(world: "WorldState", aid: str) -> float:
     # Resources + yield feed fight power
     mil += 0.20 * (resource_pool(ag) / 100.0)
     mil += 0.15 * float(ag.geographic_yield)
+    # M2 tech Adoption Meter — fielded crafts weight the spear
+    tech = getattr(world, "tech", None)
+    if tech is not None:
+        mil_map = getattr(tech, "military", None) or {}
+        if isinstance(mil_map, dict):
+            mil += 0.35 * float(mil_map.get(aid, 0.0) or 0.0)
     return max(0.05, mil + 0.30 * (float(ag.viability) / 100.0))
 
 
@@ -369,8 +375,114 @@ def _apply_ally_betrayal_spike(world: "WorldState", attacker_id: str, defender_i
     except Exception:
         pass
 
-def resolve_attack(world: "WorldState", attacker_id: str, defender_id: str) -> dict[str, Any]:
-    """Mil/resources fight; loser −~30 viability; winner exhaustion + fear drop + spoils."""
+def levy_extract(world: "WorldState", aid: str) -> float:
+    """0–1 levy/manpower extract proxy for front capacity."""
+    demo = getattr(world, "demographics", None)
+    if demo is None or not hasattr(demo, "courts"):
+        return 0.45
+    court = demo.courts.get(aid) if hasattr(demo, "courts") else None
+    if court is None:
+        return 0.45
+    levy = float(getattr(court, "levy_base", 0.5) or 0.5)
+    mp = float(getattr(court, "available_manpower", 0.5) or 0.5)
+    return max(0.0, min(1.0, 0.55 * levy + 0.45 * mp))
+
+
+def offensive_capacity(world: "WorldState", aid: str) -> dict[str, Any]:
+    """How many simultaneous fronts this court can still open this quarter.
+
+    Strong courts (force + levy + grain + viability) may open several fronts;
+    weak courts get 0–1. Already-opened fronts this quarter reduce residual.
+    """
+    ensure_econ_fields(world)
+    ag = world.agents.get(aid)
+    if not _alive(ag):
+        return {
+            "attacker": aid,
+            "alive": False,
+            "score": 0.0,
+            "max_fronts": 0,
+            "opened": 0,
+            "residual": 0,
+            "can_launch": False,
+            "force_scale": 0.0,
+            "reason": "annexed_or_gone",
+            "force": 0.0,
+            "levy": 0.0,
+            "grain": 0.0,
+            "viability": 0.0,
+        }
+    force = float(military_strength(world, aid))
+    levy = float(levy_extract(world, aid))
+    grain = float(ag.grain)
+    treasury = float(ag.treasury)
+    via = float(ag.viability)
+    score = (
+        0.28 * (via / 100.0)
+        + 0.22 * (grain / 100.0)
+        + 0.14 * (treasury / 100.0)
+        + 0.22 * min(1.0, force / 1.35)
+        + 0.14 * levy
+    )
+    if score < 0.32 or via < 28 or grain < ATTACK_COST_GRAIN or treasury < ATTACK_COST_TREASURY:
+        max_fronts = 0
+    elif score < 0.48:
+        max_fronts = 1
+    elif score < 0.68:
+        max_fronts = 2
+    else:
+        max_fronts = 3
+    opened = int((getattr(world, "player_offensive_fronts", None) or {}).get(aid, 0) or 0)
+    residual = max(0, max_fronts - opened)
+    # Stretching a second/third front weakens the spear
+    if residual <= 0:
+        force_scale = 0.0
+        reason = "no_front_capacity"
+        can_launch = False
+    elif opened == 0:
+        force_scale = 1.0
+        reason = "ready"
+        can_launch = True
+    elif opened == 1:
+        force_scale = 0.78 if score >= 0.55 else 0.62
+        reason = "second_front_stretched"
+        can_launch = True
+    else:
+        force_scale = 0.55 if score >= 0.70 else 0.42
+        reason = "third_front_thin"
+        can_launch = score >= 0.55
+        if not can_launch:
+            force_scale = 0.0
+            reason = "too_thin_for_another_front"
+    return {
+        "attacker": aid,
+        "alive": True,
+        "score": round(score, 3),
+        "max_fronts": max_fronts,
+        "opened": opened,
+        "residual": residual if can_launch else 0,
+        "can_launch": can_launch and residual > 0,
+        "force_scale": round(force_scale, 3),
+        "reason": reason,
+        "force": round(force, 3),
+        "levy": round(levy, 3),
+        "grain": round(grain, 1),
+        "viability": round(via, 1),
+        "afford_attack": can_afford_attack(ag),
+    }
+
+
+def resolve_attack(
+    world: "WorldState",
+    attacker_id: str,
+    defender_id: str,
+    *,
+    force_scale: float = 1.0,
+) -> dict[str, Any]:
+    """Mil/resources fight; loser −~30 viability; winner exhaustion + fear drop + spoils.
+
+    force_scale < 1 weakens the attacker (stretched multi-front). Ally betrayal spike unchanged.
+    """
     ensure_econ_fields(world)
     atk = world.agents[attacker_id]
     dfn = world.agents[defender_id]
@@ -387,6 +499,7 @@ def resolve_attack(world: "WorldState", attacker_id: str, defender_id: str) -> d
             "defender": defender_id,
             "cancelled": True,
             "reason": "broke",
+            "force_scale": float(force_scale),
         }
 
     spend_attack(atk)
@@ -397,7 +510,8 @@ def resolve_attack(world: "WorldState", attacker_id: str, defender_id: str) -> d
         # Broke defender fights at half strength
         d_pow = 0.5 * military_strength(world, defender_id)
 
-    a_pow = military_strength(world, attacker_id)
+    scale = max(0.25, min(1.25, float(force_scale or 1.0)))
+    a_pow = military_strength(world, attacker_id) * scale
     bias = 0.04 if (world.tick + hash(attacker_id) + hash(defender_id)) % 2 == 0 else -0.04
     # Desperate attackers fight harder (theft urgency)
     if atk.desperate:
@@ -453,6 +567,7 @@ def resolve_attack(world: "WorldState", attacker_id: str, defender_id: str) -> d
         "annexed": annexed,
         "cancelled": False,
         "desperate": bool(atk.desperate),
+        "force_scale": round(scale, 3),
     }
 
 

@@ -101,14 +101,19 @@ class WorldState:
     alliance_fund_log: list[str] = field(default_factory=list)
     # Last invest attempt error (None on success) — for Flask/CLI without parsing logs
     last_player_action_error: str | None = None
+    last_player_offensive_error: str | None = None
     last_alliance_fund_error: str | None = None
     last_alliance_attempt_error: str | None = None
     last_intervene_error: str | None = None
     # Demo play-feel: 1 invest + 1 Attempt Alliance + 1 Intervene;
+    # player offensives soft-cap 3/quarter; per-court fronts tracked separately
     # alliance fund: each purpose (tech/agri/build/mil) once per tick
     player_invest_actions_left: int = 1
     alliance_attempt_actions_left: int = 1
     intervene_actions_left: int = 1
+    player_offensive_actions_left: int = 3  # soft player-initiated cap ~2–3/quarter
+    player_offensive_fronts: dict[str, int] = field(default_factory=dict)  # attacker→fronts this quarter
+    last_player_offensive: dict[str, Any] | None = None
     alliance_fund_spent_purposes: list[str] = field(default_factory=list)
     # Run-start baselines + append-only per-event faction deltas (Field dashboard)
     faction_baseline: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -230,6 +235,15 @@ class WorldState:
         self.intervene_actions_left = max(
             0, min(1, int(getattr(self, "intervene_actions_left", 1)))
         )
+        self.player_offensive_actions_left = max(
+            0, min(3, int(getattr(self, "player_offensive_actions_left", 3)))
+        )
+        fronts = getattr(self, "player_offensive_fronts", None) or {}
+        if not isinstance(fronts, dict):
+            fronts = {}
+        self.player_offensive_fronts = {
+            str(k): max(0, int(v)) for k, v in fronts.items()
+        }
         spent = getattr(self, "alliance_fund_spent_purposes", None) or []
         if not isinstance(spent, list):
             spent = list(spent)
@@ -324,6 +338,15 @@ class WorldState:
             "player_invest_actions_left": int(self.player_invest_actions_left),
             "alliance_attempt_actions_left": int(self.alliance_attempt_actions_left),
             "intervene_actions_left": int(self.intervene_actions_left),
+            "player_offensive_actions_left": int(self.player_offensive_actions_left),
+            "player_offensive_fronts": {
+                str(k): int(v) for k, v in (self.player_offensive_fronts or {}).items()
+            },
+            "last_player_offensive": (
+                dict(self.last_player_offensive)
+                if isinstance(self.last_player_offensive, dict)
+                else None
+            ),
             "alliance_fund_spent_purposes": list(self.alliance_fund_spent_purposes),
             "faction_baseline": dict(self.faction_baseline),
             "meso_baseline": dict(self.meso_baseline),
@@ -439,6 +462,20 @@ class WorldState:
                 raw["intervene_actions_left"]
                 if raw.get("intervene_actions_left") is not None
                 else 1
+            ),
+            player_offensive_actions_left=int(
+                raw["player_offensive_actions_left"]
+                if raw.get("player_offensive_actions_left") is not None
+                else 3
+            ),
+            player_offensive_fronts={
+                str(k): int(v)
+                for k, v in (raw.get("player_offensive_fronts") or {}).items()
+            },
+            last_player_offensive=(
+                dict(raw["last_player_offensive"])
+                if isinstance(raw.get("last_player_offensive"), dict)
+                else None
             ),
             alliance_fund_spent_purposes=list(raw.get("alliance_fund_spent_purposes") or []),
             faction_baseline=dict(raw.get("faction_baseline") or {}),

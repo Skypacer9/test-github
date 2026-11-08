@@ -1337,7 +1337,7 @@
         <div class="player-invest">
           <div class="player-purse">Player purse — Political Capital <b id="pc-val">100</b> · Treasury <b id="pt-val">100</b></div>
           <div class="player-purse">Alliance joint fund — Grain <b id="af-g">0</b> · Treasury <b id="af-t">0</b></div>
-          <div class="player-purse">Actions this quarter — Invest <b id="invest-left">1</b>/1 · Alliance <b id="alliance-left">1</b>/1 · Intervene <b id="intervene-left">1</b>/1 · Fund purposes <b id="af-left">4</b>/4</div>
+          <div class="player-purse">Actions this quarter — Invest <b id="invest-left">1</b>/1 · Alliance <b id="alliance-left">1</b>/1 · Intervene <b id="intervene-left">1</b>/1 · Offensive <b id="offensive-left">3</b>/3 · Fund purposes <b id="af-left">4</b>/4</div>
           <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase">Invest</span>
           <select id="invest-target" aria-label="Target state">
             <option value="chu">Chu</option>
@@ -1350,6 +1350,11 @@
           <button class="cmd" id="btn-fund" type="button">Fund Military</button>
           <button class="cmd" id="btn-grain" type="button">Send Grain</button>
           <button class="cmd" id="btn-mediate" type="button">Broker Mediation</button>
+          <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%;margin-top:0.35rem">Offensive</span>
+          <select id="off-attacker" aria-label="Attacker state"></select>
+          <select id="off-target" aria-label="Target state"></select>
+          <button class="cmd danger" id="btn-offensive" type="button">Launch Offensive</button>
+          <div class="player-purse" id="off-capacity-line" style="width:100%">Pick attacker — residual front capacity appears here.</div>
           <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%;margin-top:0.25rem">Alliance fund spend</span>
           <button class="cmd" id="btn-af-tech" type="button">Tech</button>
           <button class="cmd" id="btn-af-agri" type="button">Agriculture</button>
@@ -1470,7 +1475,10 @@
     let selectedFigure = "kaolie";
     let profileLoadedOnce = false;
     let skipNextAutosave = false;
-    let lastBudget = { invest: 1, allianceAttempt: 1, intervene: 1, allianceFundSpent: [] };
+    let lastBudget = { invest: 1, allianceAttempt: 1, intervene: 1, offensive: 3, allianceFundSpent: [] };
+    let lastOffensiveCap = {};
+    let lastOffensiveNeighbors = {};
+    const STATE_LABEL = { qin: "Qin", chu: "Chu", qi: "Qi", zhao: "Zhao", han: "Han", wei: "Wei", yan: "Yan" };
     let lastCounselSession = { open: false, figure_id: "", channel: "", mode: "" };
     let lastFieldState = null;
     let dossierStateId = null;
@@ -1843,6 +1851,83 @@
         });
         sel.value = first || "chu";
       }
+    }
+
+    function refreshOffensivePickers(agents, caps, neighbors) {
+      const atkSel = $("off-attacker");
+      const tgtSel = $("off-target");
+      if (!atkSel || !tgtSel) return;
+      const ags = agents || {};
+      const prevA = atkSel.value;
+      const prevT = tgtSel.value;
+      const living = FIELD_IDS.filter((id) => {
+        const ag = ags[id] || {};
+        return !(ag.annexed || Number(ag.viability) <= 0);
+      });
+      atkSel.innerHTML = living.map((id) => {
+        const cap = (caps && caps[id]) || {};
+        const residual = Number(cap.residual);
+        const maxF = Number(cap.max_fronts);
+        const name = (ags[id] && ags[id].name) || STATE_LABEL[id] || id;
+        const bit = Number.isFinite(residual)
+          ? ` — ${Math.max(0, residual)}/${Number.isFinite(maxF) ? maxF : "?"} fronts left`
+          : "";
+        const weak = cap.can_launch === false ? " (no capacity)" : "";
+        return `<option value="${esc(id)}">${esc(name + bit + weak)}</option>`;
+      }).join("");
+      if (prevA && atkSel.querySelector(`option[value="${prevA}"]`)) atkSel.value = prevA;
+      else if (living.indexOf("chu") >= 0) atkSel.value = "chu";
+      else if (living[0]) atkSel.value = living[0];
+
+      function fillTargets() {
+        const aid = atkSel.value;
+        const nbrs = (neighbors && neighbors[aid]) || [];
+        const opts = living.filter((id) => id !== aid && nbrs.indexOf(id) >= 0);
+        const fallback = living.filter((id) => id !== aid);
+        const list = opts.length ? opts : fallback;
+        tgtSel.innerHTML = list.map((id) => {
+          const name = (ags[id] && ags[id].name) || STATE_LABEL[id] || id;
+          const adj = nbrs.indexOf(id) >= 0 ? "" : " (not adjacent)";
+          return `<option value="${esc(id)}"${nbrs.indexOf(id) < 0 ? " disabled" : ""}>${esc(name + adj)}</option>`;
+        }).join("") || `<option value="">No living neighbor</option>`;
+        if (prevT && tgtSel.querySelector(`option[value="${prevT}"]:not([disabled])`)) tgtSel.value = prevT;
+      }
+      fillTargets();
+      atkSel.onchange = () => {
+        fillTargets();
+        paintOffensiveCapacity();
+      };
+      paintOffensiveCapacity();
+    }
+
+    function paintOffensiveCapacity() {
+      const line = $("off-capacity-line");
+      if (!line) return;
+      const aid = ($("off-attacker") && $("off-attacker").value) || "";
+      const tid = ($("off-target") && $("off-target").value) || "";
+      const cap = (lastOffensiveCap && lastOffensiveCap[aid]) || null;
+      const launches = Number(lastBudget.offensive);
+      const name = STATE_LABEL[aid] || aid || "—";
+      if (!cap) {
+        line.textContent = `Player launches left ${Number.isFinite(launches) ? launches : "—"}/3. Pick an attacker.`;
+        return;
+      }
+      const residual = Math.max(0, Number(cap.residual) || 0);
+      const maxF = Number(cap.max_fronts);
+      const scale = Number(cap.force_scale);
+      const can = !!cap.can_launch;
+      let tip = can
+        ? `${name} can open ${residual} more front(s) this quarter (max ${Number.isFinite(maxF) ? maxF : "—"}).`
+        : `${name} cannot open another front (${cap.reason || "no capacity"}).`;
+      if (can && Number.isFinite(scale) && scale < 0.99) {
+        tip += ` Next launch is stretched (force ×${scale.toFixed(2)}).`;
+      }
+      tip += ` Force ${Number(cap.force || 0).toFixed(2)} · levy ${Number(cap.levy || 0).toFixed(2)} · grain ${Math.round(Number(cap.grain) || 0)} · via ${Math.round(Number(cap.viability) || 0)}.`;
+      tip += ` Player launches left ${Number.isFinite(launches) ? launches : "—"}/3.`;
+      if (tid) tip += ` Target: ${STATE_LABEL[tid] || tid}.`;
+      line.textContent = tip;
+      const btn = $("btn-offensive");
+      if (btn) btn.disabled = busy || launches <= 0 || !can || !tid;
     }
 
     function meterHtml(key, label, val, idPrefix) {
@@ -2515,6 +2600,7 @@ function renderProfile(prof) {
       const invLeft = Number(s.player_invest_actions_left);
       const allLeft = Number(s.alliance_attempt_actions_left);
       const intLeft = Number(s.intervene_actions_left);
+      const offLeft = Number(s.player_offensive_actions_left);
       const spent = Array.isArray(s.alliance_fund_spent_purposes)
         ? s.alliance_fund_spent_purposes
         : (Array.isArray(data.alliance_fund_spent_purposes) ? data.alliance_fund_spent_purposes : []);
@@ -2522,13 +2608,18 @@ function renderProfile(prof) {
       setText("invest-left", Number.isFinite(invLeft) ? Math.max(0, Math.round(invLeft)) : "—");
       setText("alliance-left", Number.isFinite(allLeft) ? Math.max(0, Math.round(allLeft)) : "—");
       setText("intervene-left", Number.isFinite(intLeft) ? Math.max(0, Math.round(intLeft)) : "—");
+      setText("offensive-left", Number.isFinite(offLeft) ? Math.max(0, Math.round(offLeft)) : "—");
       setText("af-left", afLeft);
       if (Number.isFinite(invLeft)) lastBudget.invest = invLeft;
       if (Number.isFinite(allLeft)) lastBudget.allianceAttempt = allLeft;
       if (Number.isFinite(intLeft)) lastBudget.intervene = intLeft;
+      if (Number.isFinite(offLeft)) lastBudget.offensive = offLeft;
       lastBudget.allianceFundSpent = spent.map((p) => String(p).toLowerCase());
+      lastOffensiveCap = s.offensive_capacity || {};
+      lastOffensiveNeighbors = s.offensive_neighbors || {};
       syncBudgetButtons();
       refreshInvestTargets(agents);
+      refreshOffensivePickers(agents, lastOffensiveCap, lastOffensiveNeighbors);
       renderPlayerLog(s.player_log || []);
 
       const reading = s.pathway_reading || "";
@@ -2619,6 +2710,7 @@ function renderProfile(prof) {
       if (btnAll) btnAll.disabled = busy || allianceGone;
       const btnInt = $("btn-intervene");
       if (btnInt) btnInt.disabled = busy || interveneGone;
+      paintOffensiveCapacity();
       const purposeBtn = {
         tech: "btn-af-tech",
         agriculture: "btn-af-agri",
@@ -3018,6 +3110,14 @@ function renderProfile(prof) {
       api("/api/send_grain", { method: "POST", body: JSON.stringify({ target: investTarget() }) }));
     $("btn-mediate").onclick = () => run("Broker Mediation", () =>
       api("/api/broker_mediation", { method: "POST", body: JSON.stringify({ target: investTarget() }) }));
+    $("btn-offensive").onclick = () => run("Offensive", () => {
+      const attacker = ($("off-attacker") && $("off-attacker").value) || "";
+      const target = ($("off-target") && $("off-target").value) || "";
+      return api("/api/offensive", {
+        method: "POST",
+        body: JSON.stringify({ attacker, target }),
+      });
+    });
     async function spendAllianceFund(purpose, label) {
       await run(label, async () => {
         const spent = await api("/api/alliance_fund", {

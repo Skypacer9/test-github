@@ -17,8 +17,10 @@ from engine.tick import attempt_alliance as eng_alliance
 from engine.tick import intervene_many as eng_intervene_many
 from engine.tick import pathway_reading_note
 from engine.tick import player_action as eng_player_action
+from engine.tick import player_offensive as eng_player_offensive
 from engine.tick import spend_alliance_fund as eng_spend_fund
 from engine.tick import tick as eng_tick
+from engine.conflict import NEIGHBORS, offensive_capacity
 from engine.counsel import counsel_log_texts, run_counsel_round as eng_counsel, suggest_prompt_chips
 from engine.trust import chu_clique_strength, get_trust
 from engine.world import WorldState, new_world
@@ -219,6 +221,22 @@ def _project(world: WorldState) -> dict[str, Any]:
         "player_invest_actions_left": int(getattr(world, "player_invest_actions_left", 1)),
         "alliance_attempt_actions_left": int(getattr(world, "alliance_attempt_actions_left", 1)),
         "intervene_actions_left": int(getattr(world, "intervene_actions_left", 1)),
+        "player_offensive_actions_left": int(getattr(world, "player_offensive_actions_left", 3)),
+        "player_offensive_fronts": {
+            str(k): int(v)
+            for k, v in (getattr(world, "player_offensive_fronts", None) or {}).items()
+        },
+        "last_player_offensive": (
+            dict(getattr(world, "last_player_offensive"))
+            if isinstance(getattr(world, "last_player_offensive", None), dict)
+            else None
+        ),
+        "offensive_capacity": {
+            sid: offensive_capacity(world, sid)
+            for sid in ("qin", "chu", "qi", "zhao", "han", "wei", "yan")
+            if sid in world.agents
+        },
+        "offensive_neighbors": {sid: list(NEIGHBORS.get(sid, ())) for sid in NEIGHBORS},
         "alliance_fund_spent_purposes": list(
             getattr(world, "alliance_fund_spent_purposes", None) or []
         ),
@@ -382,6 +400,19 @@ def do_player_action(
     before = len(world.episode)
     eng_player_action(world, action, target)
     err = getattr(world, "last_player_action_error", None)
+    return _project(world), _chat_from_new_logs(world, before), err
+
+
+def do_player_offensive(
+    raw: dict[str, Any] | None,
+    attacker: str,
+    target: str,
+) -> tuple[dict[str, Any], list[dict[str, str]], str | None]:
+    """Player Offensive — attacker + target pickers; capacity-gated."""
+    world = _world_from_ui(raw)
+    before = len(world.episode)
+    eng_player_offensive(world, attacker, target)
+    err = getattr(world, "last_player_offensive_error", None)
     return _project(world), _chat_from_new_logs(world, before), err
 
 

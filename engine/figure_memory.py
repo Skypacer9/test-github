@@ -186,13 +186,21 @@ def memories_for(world: Any, fid: str, *, limit: int = 3) -> list[dict[str, Any]
     return out[:limit]
 
 
-def memory_bite(world: Any, fid: str) -> str:
-    """One short memory line for utterance shaping (may be empty)."""
-    rows = memories_for(world, fid, limit=2)
+def memory_bite(world: Any, fid: str, *, salt: tuple[Any, ...] | list[Any] | None = None) -> str:
+    """One short memory line for utterance shaping (may be empty).
+
+    Rotates among recent memories when salt (tick/speak) is provided so Speaks
+    do not lock onto the same prior forever.
+    """
+    rows = memories_for(world, fid, limit=4)
     if not rows:
         return ""
-    # Prefer in-run event over prior when present
-    pick = rows[0]
+    if salt is not None and len(rows) > 1:
+        h = hashlib.sha256("|".join(str(x) for x in (fid, *salt, "mbite")).encode()).hexdigest()
+        pick = rows[int(h[:8], 16) % len(rows)]
+    else:
+        # Prefer in-run event over prior when present
+        pick = rows[0]
     text = str(pick.get("text") or "").strip()
     if not text:
         return ""

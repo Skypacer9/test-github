@@ -109,12 +109,15 @@ def tick(world: WorldState, *, apply_pending_shock: bool = True) -> WorldState:
     world.player_invest_actions_left = 1
     world.alliance_attempt_actions_left = 1
     world.intervene_actions_left = 1
+    world.player_offensive_actions_left = 3  # soft player offensive cap ~2–3/quarter
+    world.player_offensive_fronts = {}
     world.alliance_fund_spent_purposes = []
     world.counsel_actions_left = 6  # refresh Speak→Decide episode budget
     # Close any open counsel talk on Advance — no lingering player prompt memory
     from .counsel import clear_counsel_session
     clear_counsel_session(world)
     world.last_player_action_error = None
+    world.last_player_offensive_error = None
     world.last_alliance_attempt_error = None
     world.last_intervene_error = None
     world.last_alliance_fund_error = None
@@ -349,6 +352,8 @@ OVERCONFIDENCE_FEAR = 0.20  # Trust-Action Paradox threshold
 ANTI_QIN_TARGETS = ("chu", "qi", "zhao", "han", "wei", "yan")
 # Name / alias → canonical state id (invest targets)
 TARGET_ALIASES = {
+    "qin": "qin",
+    "秦": "qin",
     "chu": "chu",
     "楚": "chu",
     "qi": "qi",
@@ -365,6 +370,10 @@ TARGET_ALIASES = {
     "yan": "yan",
     "燕": "yan",
 }
+OFFENSIVE_STATE_IDS = ("qin", "chu", "qi", "zhao", "han", "wei", "yan")
+OFFENSIVE_PC_COST = 10.0
+OFFENSIVE_TR_COST = 12.0
+PLAYER_OFFENSIVE_SOFT_CAP = 3
 
 
 def _as_bool(val: object, default: bool = False) -> bool:
@@ -583,6 +592,170 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
         anchor="player soft-lock invest (Fund Military / Send Grain / Broker Mediation)",
     )
     _append_player_log(world, f"[t={world.tick}] {note}")
+    world.clamp()
+    return world
+
+
+def player_offensive(
+    world: WorldState,
+    attacker: str,
+    target: str,
+) -> WorldState:
+    """Player-initiated Offensive: pick attacker + target (not fixed focus).
+
+    Soft global cap ~2–3 launches/quarter. Each launch checks that court's
+    force / levy extract / grain / viability — refuse if no front capacity;
+    weaken (force_scale < 1) when stretching a second/third front. Strong
+    courts may open several fronts; weak courts cannot. Ally betrayal spike
+    still fires via resolve_attack when anti-Qin strikes anti-Qin.
+    """
+    from .conflict import (
+        NEIGHBORS,
+        ensure_econ_fields,
+        offensive_capacity,
+        resolve_attack,
+    )
+
+    ensure_econ_fields(world)
+    world.last_player_offensive_error = None
+    world.last_player_offensive = None
+    aid = _normalize_invest_target(attacker)
+    tid = _normalize_invest_target(target)
+    if aid not in OFFENSIVE_STATE_IDS or tid not in OFFENSIVE_STATE_IDS:
+        note = (
+            f"Offensive failed: attacker/target must be living Field states "
+            f"({', '.join(OFFENSIVE_STATE_IDS)}); got {attacker!r}→{target!r}"
+        )
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+    if aid == tid:
+        note = "Offensive failed: attacker and target must differ"
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+    atk = world.agents.get(aid)
+    dfn = world.agents.get(tid)
+    if atk is None or dfn is None:
+        note = f"Offensive failed: unknown court ({aid}→{tid})"
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+    if getattr(atk, "annexed", False) or float(getattr(atk, "viability", 0) or 0) <= 0:
+        note = f"Offensive failed: {getattr(atk, 'name', aid)} cannot field an army (annexed/gone)"
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+    if getattr(dfn, "annexed", False) or float(getattr(dfn, "viability", 0) or 0) <= 0:
+        note = f"Offensive failed: {getattr(dfn, 'name', tid)} is already gone"
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+    nbrs = NEIGHBORS.get(aid, ())
+    if tid not in nbrs:
+        note = (
+            f"Offensive failed: {atk.name} does not neighbor {dfn.name} "
+            f"(adjacent: {', '.join(nbrs) or '—'})"
+        )
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+
+    left = int(getattr(world, "player_offensive_actions_left", PLAYER_OFFENSIVE_SOFT_CAP))
+    if left <= 0:
+        note = (
+            f"Offensive failed: player launch budget spent this quarter "
+            f"(soft cap {PLAYER_OFFENSIVE_SOFT_CAP}) — Advance to reset"
+        )
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+
+    cap = offensive_capacity(world, aid)
+    if not cap.get("can_launch"):
+        why = str(cap.get("reason") or "no_capacity")
+        note = (
+            f"Offensive failed: {atk.name} lacks capacity for another front "
+            f"(force={cap.get('force')}, levy={cap.get('levy')}, "
+            f"grain={cap.get('grain')}, viability={cap.get('viability')}, "
+            f"opened={cap.get('opened')}/{cap.get('max_fronts')}, {why})"
+        )
+        world.last_player_offensive_error = note
+        world.last_player_offensive = dict(cap)
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+
+    pc = float(getattr(world, "player_political_capital", 100.0))
+    tr = float(getattr(world, "player_treasury", 100.0))
+    if pc < OFFENSIVE_PC_COST or tr < OFFENSIVE_TR_COST:
+        note = (
+            f"Offensive failed: need Political Capital ≥{OFFENSIVE_PC_COST:.0f} and "
+            f"Treasury ≥{OFFENSIVE_TR_COST:.0f} (have PC={pc:.0f} Treasury={tr:.0f})"
+        )
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+
+    world.player_political_capital = pc - OFFENSIVE_PC_COST
+    world.player_treasury = tr - OFFENSIVE_TR_COST
+    world.player_offensive_actions_left = max(0, left - 1)
+    fronts = dict(getattr(world, "player_offensive_fronts", None) or {})
+    fronts[aid] = int(fronts.get(aid, 0) or 0) + 1
+    world.player_offensive_fronts = fronts
+
+    scale = float(cap.get("force_scale") or 1.0)
+    res = resolve_attack(world, aid, tid, force_scale=scale)
+    if res.get("cancelled"):
+        # Refund player budget/purse if court could not actually march (broke mid-check)
+        world.player_political_capital = min(100.0, float(world.player_political_capital) + OFFENSIVE_PC_COST)
+        world.player_treasury = min(100.0, float(world.player_treasury) + OFFENSIVE_TR_COST)
+        world.player_offensive_actions_left = left
+        fronts[aid] = max(0, int(fronts.get(aid, 1)) - 1)
+        if fronts[aid] <= 0:
+            fronts.pop(aid, None)
+        world.player_offensive_fronts = fronts
+        note = (
+            f"Offensive cancelled: {atk.name} could not afford the march on {dfn.name} "
+            f"({res.get('reason') or 'broke'})"
+        )
+        world.last_player_offensive_error = note
+        world.last_player_offensive = {**cap, **res}
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+
+    residual_after = offensive_capacity(world, aid)
+    stretch = ""
+    if scale < 0.99:
+        stretch = f" stretched front (force×{scale:.2f});"
+    ally = ""
+    if getattr(atk, "bloc", "") == "anti_qin" and getattr(dfn, "bloc", "") == "anti_qin":
+        ally = " Ally betrayal spike applied."
+    note = (
+        f"Offensive: {atk.name} → {dfn.name} (−PC {OFFENSIVE_PC_COST:.0f}/−Treasury {OFFENSIVE_TR_COST:.0f});"
+        f"{stretch} winner={res.get('winner')} loser={res.get('loser')} "
+        f"atk_pow={res.get('atk_pow')} dfn_pow={res.get('dfn_pow')}; "
+        f"player launches left={world.player_offensive_actions_left}; "
+        f"{atk.name} residual fronts={residual_after.get('residual')}/"
+        f"{residual_after.get('max_fronts')}."
+        f"{ally}"
+    )
+    world.last_player_offensive = {
+        **res,
+        "capacity_before": cap,
+        "capacity_after": residual_after,
+        "player_launches_left": int(world.player_offensive_actions_left),
+    }
+    world.append_log(
+        note,
+        event_id="player_offensive",
+        actor=aid,
+        action="offensive",
+        dials_fired=["trust", "resentment", "betrayal_memory", "viability", "resources"],
+        anchor="player Offensive (attacker+target)",
+    )
+    _append_player_log(world, f"[t={world.tick}] {note}")
+    world.recompute_meso()
+    world.meso.pathway_soft = soft_pathway(world)
     world.clamp()
     return world
 

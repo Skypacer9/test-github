@@ -165,6 +165,11 @@ FIGURE_UTTERANCE_BANKS: dict[str, tuple[str, ...]] = {
         "The southern hub keeps face only if the clique still answers.",
         "I will not trade Chu's patron web for a Qin timetable.",
         "Latent courage in Chu wakes when the brokers still stand.",
+        "Name the season aloud — Chu marches on timing, and on grain.",
+        "Chunshen's receipts still steady my hand more than any poem.",
+        "If the spokes starve, the hub's courage is only costume.",
+        "Qin weather grows loud; I answer with banquet debt paid.",
+        "Hold the southern line until the clique's faces turn as one.",
     ),
     "king_you": (
         "The throne feels thin — patrons glance past me.",
@@ -173,36 +178,62 @@ FIGURE_UTTERANCE_BANKS: dict[str, tuple[str, ...]] = {
         "Chunshen's ledger weighs more than my word tonight.",
         "I keep Chu face by listening first — fear of Qin already sits here.",
         "Succession is not strength; it is a borrowed hall I must fill.",
+        "Courts test a young seal the way rivers test a new ford.",
+        "I will learn the patron web before I pretend to command it.",
     ),
     "chunshen": (
         "Guest-houses remember who paid the last banquet — and who didn't.",
         "I broker coalitions the way others broker steel: carefully, with receipts.",
         "Qin friendship talk is cheap wine. I pour levy math.",
+        "Sync the spokes first; then argue with Heaven.",
+        "A broker's courage is a filled granary and a named guest list.",
+        "I keep Kaolie's hub breathing with ink, not thunder.",
+        "When trust thins, I count workshops before I count banners.",
     ),
     "chu_nobility": (
         "We are clients, not statutes — lineage still names the debt.",
         "Abandon the patron and the whole spoke goes hungry.",
         "We hedge until the hub proves it still feeds its own.",
+        "Ancestral armor scrapes when courts draft us like extras.",
+        "Ritual debt unpaid makes cowards and critics of the same hall.",
+        "Call us with payment. Empty toasts do not move spears.",
+        "The spoke remembers who forgot the banquet first.",
     ),
     "zhaoxiang": (
         "Long reigns are won by patience — staged pressure, not one thunderclap.",
         "I expand like a slow siege: grain, passes, then the map.",
         "Fear of Qin is useful weather — I do not waste it on pageantry.",
+        "Guest talent stays when laws stay clear.",
+        "Press the fords this season; toast the court next season.",
+        "A long fuse burns cleaner than a short reign's panic.",
+        "I weigh the levy twice before I plant a new banner.",
     ),
     "ying_zheng": (
         "Unity is scheduled. Banquets wait.",
         "The map closes when courts stop improvising and start obeying.",
         "Plant the banner where the levy already answers — then press.",
+        "Sequential conquest keeps its checklist on my table.",
+        "Soft loyalty is fog on the western passes.",
+        "I schedule the next court the way others schedule a hunt.",
+        "Obedience first. Pageantry after the passes open.",
     ),
     "li_si": (
         "Huang-Lao garnish or not, fa still drafts the order of the day.",
         "I advise the seal, not the toast; statute is my spear.",
         "My memorials cut guest-expulsion short — law first.",
+        "Clear procedure beats a banquet vow every quarter.",
+        "I sharpen the next clause while others sharpen jokes.",
+        "Administrative weather decides more than toast-logic.",
+        "The mould holds; I pour policy into it.",
     ),
     "king_jian": (
         "Qi waits behind walls. The map tightens. Isolation's lesson.",
         "Guanzi math at my threshold. Leave Qin fa outside.",
         "Granaries still answer. Qi refuses rumor-starvation.",
+        "After 284, walls felt like armor I still wear.",
+        "Contribute only when the quorum is real.",
+        "Markets price a coalition. Hymns do not.",
+        "I watch the fords sold before I sell Qi's grain.",
     ),
 }
 
@@ -501,6 +532,17 @@ def _figure_bank(fid: str, *, home: str = "", role: str | None = None) -> tuple[
     return bank
 
 
+def _speak_salt(world: Any, fid: str = "") -> tuple[Any, ...]:
+    """Vary picks across Speaks in the same tick (exchanges + per-figure speak count)."""
+    sess = getattr(world, "counsel_session", None) or {}
+    ex = int(sess.get("exchanges") or 0)
+    counts = getattr(world, "_counsel_speak_counts", None)
+    if not isinstance(counts, dict):
+        counts = {}
+    n = int(counts.get(str(fid or ""), 0) or 0)
+    return (ex, n, str(sess.get("channel") or ""), str(sess.get("pressure") or "")[:40])
+
+
 def _aphorism(
     world: Any,
     fid: str,
@@ -520,8 +562,9 @@ def _aphorism(
     overlay = tuple(FIGURE_UTTERANCE_BANKS.get(str(fid or "").strip().lower()) or ())
     bank = _figure_bank(fid, home=home, role=role)
     o = ocean or {}
+    salt = _speak_salt(world, fid)
     # Bias toward figure-unique lines when available
-    pick_key = _seed_int(world.tick, fid, tag, "figbias")
+    pick_key = _seed_int(world.tick, fid, tag, "figbias", *salt)
     if overlay and (pick_key % 3) != 0:
         bank = overlay
     key = (
@@ -536,6 +579,7 @@ def _aphorism(
         f"E{o.get('E', 0):.2f}",
         f"A{o.get('A', 0):.2f}",
         f"N{o.get('N', 0):.2f}",
+        *salt,
         "apo",
     )
     line = bank[_seed_int(*key) % len(bank)]
@@ -922,30 +966,50 @@ def _utter(
     color = _ocean_color(ocean)
     N = float(ocean.get("N", 0.5))
 
+    salt = _speak_salt(world, fid)
     seed = scrub_contrast_turns(_aphorism(world, fid, tag, ocean=ocean, home=home, role=role))
     # Prefer short seeds for high-N (clipped nerves)
     if N >= 0.62 and len(seed) > 72:
         bank = _figure_bank(fid, home=home, role=role)
         short_bank = [s for s in bank if len(s) <= 72 and not has_contrast_turn(s)]
         if short_bank:
-            seed = scrub_contrast_turns(short_bank[_seed_int(world.tick, fid, "shortN", tag) % len(short_bank)])
+            seed = scrub_contrast_turns(short_bank[_seed_int(world.tick, fid, "shortN", tag, *salt) % len(short_bank)])
 
     role_bit = scrub_contrast_turns(_role_event_gloss(role, tag))
     rel = scrub_contrast_turns(_relationship_bite(world, fig, ocean))
     micro = scrub_contrast_turns(_ocean_micro(ocean, world, fid))
+    # Recent world weather (pathway / pressure) — light hook, not a second essay
+    world_bit = ""
+    try:
+        path = str(getattr(getattr(world, "meso", None), "pathway_soft", "") or "")
+        press = float(getattr(world, "qin_pressure", 0) or 0)
+        fear = float(getattr(world.agents.get(home), "state", None).fear_of_qin) if world.agents.get(home) else 0.5
+        if path == "qin_path" and home != "qin":
+            world_bit = "Qin pressure already crushes the mid-board."
+        elif path == "stalemate":
+            world_bit = "The field holds a precarious peace this season."
+        elif path == "chu_fiction" and home == "chu":
+            world_bit = "Chu's fiction still names the weather."
+        elif press >= 70 and home != "qin":
+            world_bit = "Pressure sits heavy on the passes."
+        elif fear >= 0.55 and home != "qin":
+            world_bit = "Fear of Qin sits in the throat."
+        world_bit = scrub_contrast_turns(world_bit)
+    except Exception:
+        world_bit = ""
     # Capped memories + rare unusual-event comment (not every tick)
     mem_bit = ""
     event_bit = ""
     try:
         from .figure_memory import memory_bite, maybe_unusual_event_comment
-        mem_bit = scrub_contrast_turns(memory_bite(world, fid) or "")
+        mem_bit = scrub_contrast_turns(memory_bite(world, fid, salt=salt) or "")
         event_bit = scrub_contrast_turns(maybe_unusual_event_comment(world, fig, role=role) or "")
     except Exception:
         mem_bit, event_bit = "", ""
 
-    # Compose: seed + ONE of (role / rel / memory / event) + optional ocean micro — keep short
+    # Compose: seed + ONE of (role / rel / memory / event / world) + optional ocean micro — keep short
     parts = [seed]
-    pick = _seed_int(world.tick, fid, tag, lean, role, "comp")
+    pick = _seed_int(world.tick, fid, tag, lean, role, "comp", *salt)
     if event_bit:
         # Unusual event note wins this line (brief, role-colored)
         parts = [event_bit]
@@ -965,8 +1029,10 @@ def _utter(
         elif rel and N >= 0.55:
             parts = [seed, rel]
     else:
-        if pick % 3 == 0 and mem_bit:
+        if pick % 4 == 0 and mem_bit:
             parts = [seed, mem_bit]
+        elif pick % 4 == 1 and world_bit:
+            parts = [seed, world_bit]
         elif pick % 2 == 0 and rel:
             parts = [seed, rel]
         else:
@@ -1117,8 +1183,18 @@ def _pressure_bias(pressure: str | None) -> dict[str, float]:
     }
 
 
+def _bump_speak_count(world: Any, fid: str) -> None:
+    counts = getattr(world, "_counsel_speak_counts", None)
+    if not isinstance(counts, dict):
+        counts = {}
+    key = str(fid or "")
+    counts[key] = int(counts.get(key, 0) or 0) + 1
+    world._counsel_speak_counts = counts
+
+
 def _stub_row(world: Any, fig: dict[str, Any], pressure: str | None = None, *, deciding: bool = False) -> dict[str, Any]:
     fid, home = str(fig["id"]), str(fig["home"])
+    _bump_speak_count(world, fid)
     ag = world.agents[home]
     weights = dict(getattr(ag, "packet_weights", None) or {})
     bias = dict(fig.get("packet_bias") or {})
