@@ -47,7 +47,8 @@ SAVES = ROOT / "saves"
 PLAYERS_ROOT = SAVES / "players"
 
 # --- Resource / privacy bounds (override via env) ---
-MAX_CONTENT_LENGTH = int(os.environ.get("WS_MAX_CONTENT_LENGTH") or str(256 * 1024))
+# Campaign snapshots grow with episode/counsel logs; 256 KiB was wiping Restore mid-demo.
+MAX_CONTENT_LENGTH = int(os.environ.get("WS_MAX_CONTENT_LENGTH") or str(2 * 1024 * 1024))
 MAX_PLAYERS = int(os.environ.get("WS_MAX_PLAYERS") or "48")
 PLAYER_TTL_S = int(os.environ.get("WS_PLAYER_TTL_S") or str(2 * 60 * 60))
 MAX_SLOTS_PER_PLAYER = int(os.environ.get("WS_MAX_SLOTS") or "6")
@@ -60,13 +61,20 @@ JSON_MAX_DEPTH = int(os.environ.get("WS_JSON_MAX_DEPTH") or "24")
 
 
 def _cookie_secure_default() -> bool:
-    """Prefer Secure cookies; allow explicit override for plain-HTTP lab binds."""
+    """Secure cookies on HTTPS; off by default for plain-HTTP lab/demo binds.
+
+    Secure=1 on http://127.0.0.1 made some clients drop the session cookie → every
+    request minted a new player_id / CSRF → Advance looked like a full New Run.
+    """
     raw = (os.environ.get("WS_COOKIE_SECURE") or "").strip().lower()
     if raw in ("1", "true", "yes", "on"):
         return True
     if raw in ("0", "false", "no", "off"):
         return False
-    # Published Cursor apps are HTTPS; local loopback still accepts Secure in modern browsers.
+    host = (os.environ.get("WS_HOST") or "127.0.0.1").strip().lower()
+    if host in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
+        return False
+    # Published Cursor apps are HTTPS.
     return True
 
 
@@ -463,11 +471,41 @@ def _pack(
     }
 
 
+def _try_restore_session_into(b: dict[str, Any], pid: str) -> bool:
+    """Hydrate in-memory bucket from disk session before inventing a new campaign."""
+    for path in (_session_path(pid), _legacy_autosave(pid)):
+        snap = _read_snap_file(path) if path.exists() else None
+        if not isinstance(snap, dict):
+            continue
+        try:
+            projected = import_snapshot(snap)
+        except Exception:  # noqa: BLE001 — bad disk save; try next / fall through
+            continue
+        eng = projected.get("_engine") if isinstance(projected, dict) else None
+        if not isinstance(eng, dict) or not eng.get("agents"):
+            continue
+        chat: list[dict[str, str]] = []
+        if isinstance(snap.get("chat"), list) and snap["chat"]:
+            chat = list(snap["chat"])
+        else:
+            chat = bootstrap_dialogue()
+        b["state"] = projected
+        b["chat"] = chat
+        return True
+    return False
+
+
 def _ensure() -> dict[str, Any]:
     b = _bucket()
+    pid = session.get("player_id") or ""
     with _lock:
         st = b.get("state") or {}
-        if not st or "_engine" not in st:
+        eng = st.get("_engine") if isinstance(st, dict) else None
+        healthy = isinstance(eng, dict) and bool(eng.get("agents"))
+        if not healthy:
+            # Memory eviction / blank bucket: prefer disk session over silent New Run.
+            if pid and _try_restore_session_into(b, str(pid)):
+                return b["state"]
             st = fresh_run()
             b["state"] = st
             b["chat"] = bootstrap_dialogue()
@@ -718,7 +756,27 @@ def api_advance():
     if blocked:
         return blocked
     st = _ensure()
-    projected, msgs = advance_quarter(st)
+    before_tick = int((st.get("_engine") or {}).get("tick") or st.get("tick") or 0)
+    try:
+        projected, msgs = advance_quarter(st)
+    except ValueError as exc:
+        # Never invent a fresh campaign on Advance — surface restore guidance.
+        return jsonify({"ok": False, "error": str(exc), "csrf": session.get("csrf")}), 409
+    after_tick = int((projected.get("_engine") or {}).get("tick") or projected.get("tick") or 0)
+    if after_tick < before_tick:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": (
+                        f"advance refused reset (t{before_tick}→t{after_tick}) — "
+                        "Restore last session or New Run"
+                    ),
+                    "csrf": session.get("csrf"),
+                }
+            ),
+            409,
+        )
     pack = _pack(projected, msgs)
     # Portrait dialogue: show this quarter's Chronicler line (not buried auto-counsel)
     adv_dlg = projected.get("advance_dialogue")
@@ -727,6 +785,15 @@ def api_advance():
             "speaker": str(adv_dlg.get("speaker") or "Chronicler"),
             "text": str(adv_dlg.get("text") or ""),
         }
+    # Persist immediately so memory eviction cannot turn the next Advance into New Run.
+    try:
+        pid = _player_id()
+        b = _bucket()
+        with _lock:
+            chat = list(b.get("chat") or [])
+        _write_session(pid, export_snapshot(projected, chat))
+    except Exception:  # noqa: BLE001 — autosave best-effort; Advance already applied
+        pass
     return jsonify(pack)
 
 

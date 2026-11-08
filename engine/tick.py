@@ -689,6 +689,15 @@ def player_offensive(
         world.last_player_offensive_error = note
         _append_player_log(world, f"[t={world.tick}] {note}")
         return world
+    atk_intent = str(getattr(getattr(atk, "intention", None), "current", "") or "").strip().lower()
+    if atk_intent in ("withhold", "withholding"):
+        note = (
+            f"Offensive failed: {getattr(atk, 'name', aid)} is withholding — "
+            "withholding courts cannot open military fronts"
+        )
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
     if getattr(dfn, "annexed", False) or float(getattr(dfn, "viability", 0) or 0) <= 0:
         note = f"Offensive failed: {getattr(dfn, 'name', tid)} is already gone"
         world.last_player_offensive_error = note
@@ -722,6 +731,9 @@ def player_offensive(
         og = world.agents.get(oid)
         if og is None or getattr(og, "annexed", False) or float(getattr(og, "viability", 0) or 0) <= 0:
             continue
+        og_intent = str(getattr(getattr(og, "intention", None), "current", "") or "").strip().lower()
+        if og_intent in ("withhold", "withholding"):
+            continue  # withholding peers sit out joint fronts
         if oid not in attackers:
             attackers.append(oid)
 

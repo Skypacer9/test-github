@@ -225,3 +225,52 @@ def test_alliance_fund_mediation_raises_trust():
     assert w.last_alliance_fund_error is None, w.last_alliance_fund_error
     assert "mediation" in w.alliance_fund_spent_purposes
     assert float(w.trust.get("chu->qi", 0.5)) > t0
+
+
+def test_withholding_barred_from_offensive_and_joint_fronts():
+    """Any withholding court (Qi or otherwise) cannot lead or join military fronts."""
+    from engine.tick import alliance_offensive
+
+    w = new_world()
+    for sid in ("chu", "qi", "zhao", "han", "wei", "yan"):
+        ag = w.agents[sid]
+        ag.grain = 95
+        ag.treasury = 95
+        ag.viability = 95
+        ag.intention.current = "cooperate"
+    w.agents["qi"].intention.current = "withhold"
+    cap = offensive_capacity(w, "qi")
+    assert cap["can_launch"] is False
+    assert cap["reason"] == "withholding"
+
+    player_offensive(w, "qi", "zhao")
+    assert w.last_player_offensive_error
+    assert "withhold" in w.last_player_offensive_error.lower()
+
+    # Joint: Qi withholding is dropped; Chu+Zhao still march
+    w2 = new_world()
+    for sid in ("chu", "qi", "zhao", "han", "wei", "yan"):
+        ag = w2.agents[sid]
+        ag.grain = 95
+        ag.treasury = 95
+        ag.viability = 95
+        ag.intention.current = "cooperate"
+    w2.agents["qi"].intention.current = "withhold"
+    player_offensive(w2, "chu", "qin", allies=["qi", "zhao"])
+    assert w2.last_player_offensive_error is None, w2.last_player_offensive_error
+    atks = list((w2.last_player_offensive or {}).get("attackers") or [])
+    assert "qi" not in atks
+    assert "chu" in atks
+    assert "zhao" in atks
+
+    # Alliance offensive excludes withholding from able pool
+    w3 = new_world()
+    for sid in ("chu", "qi", "zhao", "han", "wei", "yan"):
+        ag = w3.agents[sid]
+        ag.grain = 95
+        ag.treasury = 95
+        ag.viability = 95
+        ag.intention.current = "withhold"
+    alliance_offensive(w3, "qin", lead="chu")
+    assert w3.last_player_offensive_error
+    assert "front" in w3.last_player_offensive_error.lower() or "able" in w3.last_player_offensive_error.lower()

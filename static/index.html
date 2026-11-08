@@ -439,6 +439,16 @@
       padding: 0.2rem 0.45rem; border: 1px solid rgba(196,163,90,0.35);
       background: rgba(0,0,0,0.25);
     }
+    .off-mode-chip { cursor: pointer; color: var(--ws-paper-dim); }
+    .off-mode-chip.on {
+      color: var(--ws-gold-bright); border-color: rgba(196,163,90,0.75);
+      background: rgba(40, 28, 12, 0.55);
+    }
+    .off-mode-chip { cursor: pointer; color: var(--ws-paper-dim); }
+    .off-mode-chip.on {
+      color: var(--ws-gold-bright); border-color: rgba(196,163,90,0.75);
+      background: rgba(40, 28, 12, 0.55);
+    }
     .player-invest select {
       background: #1a140e; color: var(--ws-paper); border: 1px solid rgba(196,163,90,0.45);
       padding: 0.35rem 0.5rem; font-size: 0.8rem;
@@ -1373,14 +1383,18 @@
             <div class="player-purse">Alliance joint fund — Grain <b id="af-g">0</b> · Treasury <b id="af-t">0</b></div>
             <div class="player-purse">Actions this quarter — Invest <b id="invest-left">1</b>/1 · Alliance <b id="alliance-left">1</b>/1 · Intervene <b id="intervene-left">1</b>/1 · Offensive <b id="offensive-left">3</b>/3 · Fund purposes <b id="af-left">5</b>/5</div>
             <div class="offensive-box" id="offensive-box">
-              <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%">Offensive — who attacks whom</span>
+              <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%">Offensive</span>
+              <div class="off-mode" id="off-mode" role="group" aria-label="Offensive mode" style="width:100%;display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center">
+                <button type="button" class="role-chip off-mode-chip on" data-mode="solo" id="off-mode-solo">Solo / pick allies</button>
+                <button type="button" class="role-chip off-mode-chip" data-mode="alliance" id="off-mode-alliance">Alliance joint</button>
+              </div>
               <select id="off-attacker" aria-label="Lead attacker"></select>
               <select id="off-target" aria-label="Target state"></select>
               <button class="cmd danger" id="btn-offensive" type="button">Launch Offensive</button>
               <div class="off-allies" id="off-allies" style="width:100%;display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;margin-top:0.2rem">
                 <span class="label" style="font-size:0.62rem;letter-spacing:0.08em;color:var(--ws-paper-dim);text-transform:uppercase">Allies join</span>
               </div>
-              <div class="player-purse" id="off-capacity-line" style="width:100%">Pick lead attacker — residual front capacity + ally checkboxes appear here.</div>
+              <div class="player-purse" id="off-capacity-line" style="width:100%">Solo: pick lead + target (+ allies). Alliance: members march on one outward target. Withholding courts are barred.</div>
             </div>
             <div class="court-action-box" id="invest-box">
               <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%">Invest — actor → recipient</span>
@@ -1401,19 +1415,16 @@
               <div class="player-purse" id="invest-hint" style="width:100%">Recipient gets the chosen stipend (same purposes as Alliance fund, incl. Mediation).</div>
             </div>
             <div class="court-action-box" id="alliance-fund-box">
-              <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%">Alliance — partners · joint offensive · fund</span>
+              <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%">Alliance — partners · joint fund</span>
               <div class="off-allies" id="alliance-partners" style="width:100%;display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center">
                 <span class="label" style="font-size:0.62rem;letter-spacing:0.08em;color:var(--ws-paper-dim);text-transform:uppercase">Partners</span>
               </div>
-              <span class="role-chip">Joint offensive · members → target</span>
-              <select id="alliance-off-target" aria-label="Alliance offensive target"></select>
-              <button class="cmd danger" id="btn-alliance-offensive" type="button">Launch Alliance Offensive</button>
               <button class="cmd" id="btn-af-tech" type="button">Tech</button>
               <button class="cmd" id="btn-af-agri" type="button">Agriculture</button>
               <button class="cmd" id="btn-af-build" type="button">Construction</button>
               <button class="cmd" id="btn-af-mil" type="button">Military</button>
               <button class="cmd" id="btn-af-mediate" type="button">Mediation</button>
-              <div class="player-purse" id="alliance-fund-hint" style="width:100%">Joint fund/offensive/mediate mildly raise trust among participants. No counter-alliances.</div>
+              <div class="player-purse" id="alliance-fund-hint" style="width:100%">Joint fund/mediate mildly raise trust. Offensive lives above (Alliance joint mode). No counter-alliances.</div>
             </div>
           </div>
           <div class="player-log-wrap">
@@ -1535,7 +1546,10 @@
     let selectedFigure = "kaolie";
     let profileLoadedOnce = false;
     let skipNextAutosave = false;
+    let lastKnownTick = null;
     let lastBudget = { invest: 1, allianceAttempt: 1, intervene: 1, offensive: 3, allianceFundSpent: [] };
+    let offensiveMode = "solo"; // solo | alliance
+    let lastAllianceMembership = {};
     let lastOffensiveCap = {};
     let lastOffensiveNeighbors = {};
     const STATE_LABEL = { qin: "Qin", chu: "Chu", qi: "Qi", zhao: "Zhao", han: "Han", wei: "Wei", yan: "Yan" };
@@ -1576,7 +1590,12 @@
       if (!el) return;
       const n = Number(val01);
       let w = 0;
-      if (Number.isFinite(n)) w = n <= 1.0001 ? n * 100 : Math.min(100, n);
+      if (Number.isFinite(n)) {
+        // Unit fractions can slightly exceed 1.0 (Qin force ~1.00+). Treat
+        // values up through ~2 as fractions; larger numbers as 0–100 percents.
+        if (n <= 2.0001) w = n * 100;
+        else w = Math.min(100, n);
+      }
       el.style.width = Math.max(0, Math.min(100, w)) + "%";
     }
     function setText(id, t) { const el = $(id); if (el) el.textContent = t; }
@@ -1928,15 +1947,14 @@
     function refreshAlliancePartners(agents, membership) {
       const box = $("alliance-partners");
       const hint = $("alliance-fund-hint");
-      const tgtSel = $("alliance-off-target");
       if (!box) return;
       const ags = agents || {};
       const mem = membership || {};
+      lastAllianceMembership = mem;
       const memberIds = Array.isArray(mem.member_ids) ? mem.member_ids : INVEST_IDS.filter((id) => {
         const ag = ags[id] || {};
         return !(ag.annexed || Number(ag.viability) <= 0);
       });
-      const memberSet = new Set(memberIds);
       const active = new Set(Array.isArray(mem.active_ids) ? mem.active_ids : []);
       box.innerHTML =
         `<span class="label" style="font-size:0.62rem;letter-spacing:0.08em;color:var(--ws-paper-dim);text-transform:uppercase">Partners</span>` +
@@ -1947,39 +1965,44 @@
               return `<label class="chk" style="font-size:0.68rem"><input type="checkbox" value="${esc(id)}"${on ? " checked" : ""} disabled /> ${esc(name)}${on ? " · active" : " · idle"}</label>`;
             }).join("")
           : `<span style="font-size:0.65rem;color:var(--ws-paper-dim)">No living members</span>`);
-      if (tgtSel) {
-        const prev = tgtSel.value;
-        const outs = FIELD_IDS.filter((id) => {
-          if (memberSet.has(id)) return false;
-          const ag = ags[id] || {};
-          return !(ag.annexed || Number(ag.viability) <= 0);
-        });
-        tgtSel.innerHTML = outs.map((id) => {
-          const name = (ags[id] && ags[id].name) || STATE_LABEL[id] || id;
-          return `<option value="${esc(id)}">${esc(name)}</option>`;
-        }).join("") || `<option value="">No outward target</option>`;
-        if (prev && tgtSel.querySelector(`option[value="${prev}"]`)) tgtSel.value = prev;
-        else if (outs.indexOf("qin") >= 0) tgtSel.value = "qin";
-        else if (outs[0]) tgtSel.value = outs[0];
-      }
       if (hint) {
         const nM = Number(mem.n_members);
         const nA = Number(mem.n_active);
         const cM = Number(mem.cost_mult);
         const eM = Number(mem.effect_mult);
-        const tgt = (tgtSel && tgtSel.value) || "—";
         hint.textContent =
           `Members ${Number.isFinite(nM) ? nM : "—"} · active ${Number.isFinite(nA) ? nA : "—"}` +
           (Number.isFinite(cM) && Number.isFinite(eM)
             ? ` · fund ×${cM.toFixed(2)}/×${eM.toFixed(2)}`
             : "") +
-          ` · Alliance Offensive → ${STATE_LABEL[tgt] || tgt} (no counter-alliances)`;
+          ` · joint Offensive is above (Alliance joint mode)`;
       }
-      const btnAO = $("btn-alliance-offensive");
-      if (btnAO) {
-        const launches = Number(lastBudget.offensive);
-        btnAO.disabled = busy || launches <= 0 || !memberIds.length || !(tgtSel && tgtSel.value);
+      if (offensiveMode === "alliance") {
+        refreshOffensivePickers(
+          (lastFieldState && lastFieldState.agents) || agents,
+          lastOffensiveCap,
+          lastOffensiveNeighbors
+        );
       }
+    }
+
+    function setOffensiveMode(mode) {
+      offensiveMode = (mode === "alliance") ? "alliance" : "solo";
+      document.querySelectorAll(".off-mode-chip").forEach((el) => {
+        el.classList.toggle("on", el.dataset.mode === offensiveMode);
+      });
+      const atk = $("off-attacker");
+      const allies = $("off-allies");
+      if (atk) atk.style.display = offensiveMode === "alliance" ? "none" : "";
+      if (allies) allies.style.display = offensiveMode === "alliance" ? "none" : "";
+      const btn = $("btn-offensive");
+      if (btn) btn.textContent = offensiveMode === "alliance" ? "Launch Alliance Offensive" : "Launch Offensive";
+      refreshOffensivePickers(
+        (lastFieldState && lastFieldState.agents) || {},
+        lastOffensiveCap,
+        lastOffensiveNeighbors
+      );
+      paintOffensiveCapacity();
     }
 
     function refreshOffensivePickers(agents, caps, neighbors) {
@@ -2002,17 +2025,57 @@
         const residual = Number(cap.residual);
         const maxF = Number(cap.max_fronts);
         const name = (ags[id] && ags[id].name) || STATE_LABEL[id] || id;
+        const intent = String((ags[id] && (ags[id].intention || ags[id].intention_label)) || "").toLowerCase();
+        const withholding = (cap.reason === "withholding")
+          || intent.indexOf("withhold") >= 0
+          || String(cap.intention || "").toLowerCase().indexOf("withhold") >= 0;
         const bit = Number.isFinite(residual)
           ? ` — ${Math.max(0, residual)}/${Number.isFinite(maxF) ? maxF : "?"} fronts left`
           : "";
-        const weak = cap.can_launch === false ? " (no capacity)" : "";
-        return `<option value="${esc(id)}">${esc(name + bit + weak)}</option>`;
+        let weak = "";
+        if (withholding) weak = " (withholding — barred)";
+        else if (cap.can_launch === false) weak = " (no capacity)";
+        return `<option value="${esc(id)}"${withholding ? " disabled" : ""}>${esc(name + bit + weak)}</option>`;
       }).join("");
-      if (prevA && atkSel.querySelector(`option[value="${prevA}"]`)) atkSel.value = prevA;
-      else if (living.indexOf("chu") >= 0) atkSel.value = "chu";
+      const ableAttackers = living.filter((id) => {
+        const cap = (caps && caps[id]) || {};
+        const intent = String((ags[id] && (ags[id].intention || "")) || "").toLowerCase();
+        if (cap.reason === "withholding" || intent.indexOf("withhold") >= 0) return false;
+        return true;
+      });
+      if (prevA && ableAttackers.indexOf(prevA) >= 0) atkSel.value = prevA;
+      else if (ableAttackers.indexOf("chu") >= 0) atkSel.value = "chu";
+      else if (ableAttackers[0]) atkSel.value = ableAttackers[0];
       else if (living[0]) atkSel.value = living[0];
 
       function fillTargetsAndAllies() {
+        if (offensiveMode === "alliance") {
+          const mem = lastAllianceMembership || {};
+          const memberIds = Array.isArray(mem.member_ids) ? mem.member_ids : [];
+          const memberSet = new Set(memberIds);
+          const outs = living.filter((id) => {
+            if (memberSet.has(id)) return false;
+            const ag = ags[id] || {};
+            return !(ag.annexed || Number(ag.viability) <= 0);
+          });
+          tgtSel.innerHTML = outs.map((id) => {
+            const name = (ags[id] && ags[id].name) || STATE_LABEL[id] || id;
+            return `<option value="${esc(id)}">${esc(name)}</option>`;
+          }).join("") || `<option value="">No outward target</option>`;
+          if (prevT && tgtSel.querySelector(`option[value="${prevT}"]`)) tgtSel.value = prevT;
+          else if (outs.indexOf("qin") >= 0) tgtSel.value = "qin";
+          else if (outs[0]) tgtSel.value = outs[0];
+          if (alliesBox) {
+            const able = memberIds.filter((id) => {
+              const cap = (caps && caps[id]) || {};
+              return cap.can_launch !== false && cap.reason !== "withholding";
+            });
+            alliesBox.innerHTML =
+              `<span class="label" style="font-size:0.62rem;letter-spacing:0.08em;color:var(--ws-paper-dim);text-transform:uppercase">Alliance march</span>` +
+              `<span style="font-size:0.65rem;color:var(--ws-paper-dim)">Members with fronts: ${able.length ? able.map((id) => STATE_LABEL[id] || id).join(", ") : "none"} (each burns own quota; withholding barred)</span>`;
+          }
+          return;
+        }
         const aid = atkSel.value;
         const leadBloc = String((ags[aid] && ags[aid].bloc) || "");
         const nbrs = (neighbors && neighbors[aid]) || [];
@@ -2043,9 +2106,14 @@
               ? peers.map((id) => {
                   const name = (ags[id] && ags[id].name) || STATE_LABEL[id] || id;
                   const cap = (caps && caps[id]) || {};
-                  const ok = cap.can_launch !== false;
-                  const checked = prevAllies.has(id) ? " checked" : "";
-                  return `<label class="chk" style="font-size:0.68rem"><input type="checkbox" value="${esc(id)}"${checked}${ok ? "" : " disabled"} /> ${esc(name)}${ok ? "" : " (no capacity)"}</label>`;
+                  const intent = String((ags[id] && (ags[id].intention || ags[id].intention_label)) || "").toLowerCase();
+                  const withholding = (cap.reason === "withholding")
+                    || intent.indexOf("withhold") >= 0
+                    || String(cap.intention || "").toLowerCase().indexOf("withhold") >= 0;
+                  const ok = !withholding && cap.can_launch !== false;
+                  const checked = (!withholding && prevAllies.has(id)) ? " checked" : "";
+                  const tag = withholding ? " (withholding — barred)" : (ok ? "" : " (no capacity)");
+                  return `<label class="chk" style="font-size:0.68rem"><input type="checkbox" value="${esc(id)}"${checked}${ok ? "" : " disabled"} /> ${esc(name)}${esc(tag)}</label>`;
                 }).join("")
               : `<span style="font-size:0.65rem;color:var(--ws-paper-dim)">No same-bloc allies available</span>`);
           alliesBox.querySelectorAll("input[type=checkbox]").forEach((el) => {
@@ -2070,20 +2138,42 @@
       if (!line) return;
       const aid = ($("off-attacker") && $("off-attacker").value) || "";
       const tid = ($("off-target") && $("off-target").value) || "";
-      const cap = (lastOffensiveCap && lastOffensiveCap[aid]) || null;
       const launches = Number(lastBudget.offensive);
+      const btn = $("btn-offensive");
+      if (offensiveMode === "alliance") {
+        const mem = lastAllianceMembership || {};
+        const memberIds = Array.isArray(mem.member_ids) ? mem.member_ids : [];
+        const able = memberIds.filter((id) => {
+          const cap = (lastOffensiveCap && lastOffensiveCap[id]) || {};
+          return cap.can_launch !== false && cap.reason !== "withholding";
+        });
+        let tip = `Alliance joint · ${able.length} member(s) with front capacity (need ≥2).`;
+        tip += ` Player launches left ${Number.isFinite(launches) ? launches : "—"}/3.`;
+        if (tid) tip += ` Target: ${STATE_LABEL[tid] || tid}.`;
+        tip += " Withholding barred · each able court burns its own quota · no counter-alliances.";
+        line.textContent = tip;
+        if (btn) btn.disabled = busy || launches <= 0 || able.length < 2 || !tid;
+        return;
+      }
+      const cap = (lastOffensiveCap && lastOffensiveCap[aid]) || null;
       const name = STATE_LABEL[aid] || aid || "—";
       if (!cap) {
         line.textContent = `Player launches left ${Number.isFinite(launches) ? launches : "—"}/3. Pick an attacker.`;
+        if (btn) btn.disabled = true;
         return;
       }
       const residual = Math.max(0, Number(cap.residual) || 0);
       const maxF = Number(cap.max_fronts);
       const scale = Number(cap.force_scale);
       const can = !!cap.can_launch;
-      let tip = can
-        ? `${name} can open ${residual} more front(s) this quarter (max ${Number.isFinite(maxF) ? maxF : "—"}).`
-        : `${name} cannot open another front (${cap.reason || "no capacity"}).`;
+      let tip;
+      if (cap.reason === "withholding" || String(cap.intention || "").toLowerCase().indexOf("withhold") >= 0) {
+        tip = `${name} is withholding — barred from military offensives and joint fronts.`;
+      } else if (can) {
+        tip = `${name} can open ${residual} more front(s) this quarter (max ${Number.isFinite(maxF) ? maxF : "—"}).`;
+      } else {
+        tip = `${name} cannot open another front (${cap.reason || "no capacity"}).`;
+      }
       if (can && Number.isFinite(scale) && scale < 0.99) {
         tip += ` Next launch is stretched (force ×${scale.toFixed(2)}).`;
       }
@@ -2091,7 +2181,6 @@
       tip += ` Player launches left ${Number.isFinite(launches) ? launches : "—"}/3.`;
       if (tid) tip += ` Target: ${STATE_LABEL[tid] || tid}.`;
       line.textContent = tip;
-      const btn = $("btn-offensive");
       if (btn) btn.disabled = busy || launches <= 0 || !can || !tid;
     }
 
@@ -2548,7 +2637,11 @@ function renderProfile(prof) {
 
       const fw = forceMap[id];
       setText("v-" + id + "-force", scaleWord(forcePlace, FIELD_IDS.length));
-      bar("b-" + id + "-force", Number.isFinite(fw) ? Math.max(0.08, fw) : 0);
+      // Normalize to field max so Qin (force > 1.0) does not collapse to ~1% width.
+      const forceVals = FIELD_IDS.map((fid) => forceMap[fid]).filter((v) => Number.isFinite(v));
+      const forceMax = forceVals.length ? Math.max.apply(null, forceVals) : 1;
+      const forceFrac = (Number.isFinite(fw) && forceMax > 0) ? (fw / forceMax) : 0;
+      bar("b-" + id + "-force", forceFrac > 0 ? Math.max(0.08, forceFrac) : 0);
 
       const craftsEl = $("crafts-" + id);
       if (craftsEl) {
@@ -2700,12 +2793,31 @@ function renderProfile(prof) {
       paintChips(filtered.length ? filtered : chips);
     }
 
-    function applyPayload(data, freshCount) {
+    function applyPayload(data, freshCount, opts) {
       if (data && data.csrf) csrfToken = data.csrf;
       const priv = $("llm-privacy");
       if (priv && data && data.llm_enabled) priv.hidden = false;
       const s = data.state || {};
       const agents = s.agents || {};
+      const options = opts || {};
+      const incomingTick = Number(s.tick);
+      // Guard: Advance (and other mutates) must never paint a silent campaign reset.
+      // Explicit New Run / Load / Restore pass allowTickReset.
+      if (
+        !options.allowTickReset
+        && lastKnownTick != null
+        && Number.isFinite(incomingTick)
+        && incomingTick < lastKnownTick
+        && !s.run_ended
+      ) {
+        $("status").textContent =
+          "Blocked reset · server returned t" + incomingTick + " after t" + lastKnownTick
+          + " — use Restore last session or Load";
+        $("status").classList.add("err");
+        showToast("Advance blocked a game restart — campaign kept at t" + lastKnownTick);
+        return false;
+      }
+      if (Number.isFinite(incomingTick)) lastKnownTick = incomingTick;
       setText("year", s.year ?? "—");
       setText("qiy", s.quarter_in_year ?? "—");
       setText("tick", s.tick ?? 0);
@@ -2920,9 +3032,10 @@ function renderProfile(prof) {
 
     function isSnap(obj) {
       if (!obj || typeof obj !== "object") return false;
-      if (obj.engine && typeof obj.engine === "object") return true;
+      // Require a real engine (or raw WorldState) — format+tick alone is not enough
+      // and would let a truncated autosave wipe a campaign on Restore.
+      if (obj.engine && typeof obj.engine === "object" && obj.engine.agents) return true;
       if (obj.agents && typeof obj.agents === "object") return true;
-      if (obj.format === "warring-states-abm" && obj.tick != null) return true;
       return false;
     }
 
@@ -3129,7 +3242,7 @@ function renderProfile(prof) {
         } catch (_) {}
         showToast("Loaded “" + row.name + "” · t" + ((data.state && data.state.tick) ?? "?"));
         return data;
-      }, { skipAutosave: true });
+      }, { skipAutosave: true, allowTickReset: true });
     }
 
     async function run(label, fn, opts) {
@@ -3139,7 +3252,12 @@ function renderProfile(prof) {
       try {
         const data = await fn();
         const fresh = (data.new_lines && data.new_lines.length) || 0;
-        applyPayload(data, fresh);
+        const painted = applyPayload(data, fresh, {
+          allowTickReset: !!options.allowTickReset,
+        });
+        if (painted === false) {
+          return null;
+        }
         $("status").textContent = label + " · ok";
         // New Run must NOT clear named slots — only skip autosave if requested
         if (!options.skipAutosave) await autosaveToLocal();
@@ -3258,11 +3376,19 @@ function renderProfile(prof) {
 
     $("btn-advance").onclick = () => run("Advance", () => api("/api/advance", { method: "POST", body: "{}" }));
     $("btn-alliance").onclick = () => run("Alliance", () => api("/api/alliance", { method: "POST", body: "{}" }));
-    $("btn-new").onclick = () => run(
-      "New run",
-      () => api("/api/new", { method: "POST", body: "{}" }),
-      { skipAutosave: true }
-    );
+    $("btn-new").onclick = () => {
+      if (lastKnownTick != null && lastKnownTick > 0) {
+        const ok = window.confirm(
+          "Start a New Run? This resets the live campaign to tick 0.\nNamed Save slots are kept."
+        );
+        if (!ok) return;
+      }
+      run(
+        "New run",
+        () => api("/api/new", { method: "POST", body: "{}" }),
+        { skipAutosave: true, allowTickReset: true }
+      );
+    };
     $("btn-intervene").onclick = () => run("Intervene", () => {
       const targets = ["t-qin", "t-chu", "t-qi"]
         .map((id) => $(id))
@@ -3287,24 +3413,28 @@ function renderProfile(prof) {
     $("btn-inv-build").onclick = investPurpose("construction", "Invest→Construction");
     $("btn-inv-mil").onclick = investPurpose("military", "Invest→Military");
     $("btn-inv-mediate").onclick = investPurpose("mediation", "Invest→Mediation");
-    $("btn-offensive").onclick = () => run("Offensive", () => {
-      const attacker = ($("off-attacker") && $("off-attacker").value) || "";
+    document.querySelectorAll(".off-mode-chip").forEach((el) => {
+      el.onclick = () => setOffensiveMode(el.dataset.mode || "solo");
+    });
+    setOffensiveMode("solo");
+    $("btn-offensive").onclick = () => {
       const target = ($("off-target") && $("off-target").value) || "";
+      if (offensiveMode === "alliance") {
+        run("Alliance Offensive", () => api("/api/alliance_offensive", {
+          method: "POST",
+          body: JSON.stringify({ target }),
+        }));
+        return;
+      }
+      const attacker = ($("off-attacker") && $("off-attacker").value) || "";
       const allies = Array.from(document.querySelectorAll("#off-allies input[type=checkbox]:checked"))
         .map((el) => el.value)
         .filter(Boolean);
-      return api("/api/offensive", {
+      run("Offensive", () => api("/api/offensive", {
         method: "POST",
         body: JSON.stringify({ attacker, target, allies }),
-      });
-    });
-    $("btn-alliance-offensive").onclick = () => run("Alliance Offensive", () => {
-      const target = ($("alliance-off-target") && $("alliance-off-target").value) || "";
-      return api("/api/alliance_offensive", {
-        method: "POST",
-        body: JSON.stringify({ target }),
-      });
-    });
+      }));
+    };
     async function spendAllianceFund(purpose, label) {
       await run(label, async () => {
         const spent = await api("/api/alliance_fund", {
@@ -3398,7 +3528,7 @@ function renderProfile(prof) {
         writeSessionSave(session);
         showToast("Restored last session · t" + ((data.state && data.state.tick) ?? session.tick ?? "?"));
         return data;
-      }, { skipAutosave: true });
+      }, { skipAutosave: true, allowTickReset: true });
     };
     $("btn-load-file").onclick = () => {
       $("load-file").click();
@@ -3424,7 +3554,7 @@ function renderProfile(prof) {
           if (slotName) putLocalSlot(slotName, body);
           showToast("Loaded file · t" + ((data.state && data.state.tick) ?? "?"));
           return data;
-        }, { skipAutosave: true });
+        }, { skipAutosave: true, allowTickReset: true });
       };
       reader.readAsText(file);
     };
@@ -3434,17 +3564,23 @@ function renderProfile(prof) {
       // A prior bug treated failed session restore (403 missing csrf) as success and
       // returned early — leaving Year/Pathway/meters at blank defaults forever.
       skipNextAutosave = true;
-      let data = await run("Load", () => api("/api/state"), { skipAutosave: true });
+      let data = await run("Load", () => api("/api/state"), {
+        skipAutosave: true,
+        allowTickReset: true,
+      });
       if (!data) {
         // One retry if the first paint failed
-        data = await run("Load", () => api("/api/state"), { skipAutosave: true });
+        data = await run("Load", () => api("/api/state"), {
+          skipAutosave: true,
+          allowTickReset: true,
+        });
       }
       const session = readSessionSave();
       if (session && csrfToken) {
         const restored = await run(
           "Restore",
           () => api("/api/load", { method: "POST", body: JSON.stringify(session) }),
-          { skipAutosave: true }
+          { skipAutosave: true, allowTickReset: true }
         );
         if (restored) {
           showToast("Restored session · t" + ((session.tick != null) ? session.tick : "?"));

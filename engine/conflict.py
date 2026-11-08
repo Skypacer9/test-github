@@ -417,6 +417,26 @@ def offensive_capacity(world: "WorldState", aid: str) -> dict[str, Any]:
     grain = float(ag.grain)
     treasury = float(ag.treasury)
     via = float(ag.viability)
+    intent = str(getattr(getattr(ag, "intention", None), "current", "") or "").strip().lower()
+    # Withholding courts (Qi or any) sit out military offensives / joint fronts.
+    if intent in ("withhold", "withholding"):
+        return {
+            "attacker": aid,
+            "alive": True,
+            "score": 0.0,
+            "max_fronts": 0,
+            "opened": int((getattr(world, "player_offensive_fronts", None) or {}).get(aid, 0) or 0),
+            "residual": 0,
+            "can_launch": False,
+            "force_scale": 0.0,
+            "reason": "withholding",
+            "intention": intent,
+            "force": round(force, 3),
+            "levy": round(levy, 3),
+            "grain": round(grain, 1),
+            "treasury": round(treasury, 1),
+            "viability": round(via, 1),
+        }
     score = (
         0.28 * (via / 100.0)
         + 0.22 * (grain / 100.0)
@@ -464,6 +484,7 @@ def offensive_capacity(world: "WorldState", aid: str) -> dict[str, Any]:
         "can_launch": can_launch and residual > 0,
         "force_scale": round(force_scale, 3),
         "reason": reason,
+        "intention": intent,
         "force": round(force, 3),
         "levy": round(levy, 3),
         "grain": round(grain, 1),

@@ -315,8 +315,16 @@ def _project(world: WorldState) -> dict[str, Any]:
     }
 
 
-def _world_from_ui(raw: dict[str, Any] | None) -> WorldState:
+def _world_from_ui(raw: dict[str, Any] | None, *, allow_fresh: bool = False) -> WorldState:
+    """Hydrate WorldState from a projected UI blob.
+
+    Mid-campaign blobs missing a usable ``_engine`` must NOT silently become
+    ``new_world()`` — that looks like Advance restarting the whole game.
+    Pass ``allow_fresh=False`` from mutate paths (Advance / Offensive / …).
+    """
     if not raw:
+        if not allow_fresh:
+            raise ValueError("campaign state missing — Restore last session or New Run")
         return new_world()
     eng = raw.get(_ENGINE_KEY)
     if isinstance(eng, dict) and eng.get("agents"):
@@ -332,6 +340,16 @@ def _world_from_ui(raw: dict[str, Any] | None) -> WorldState:
             if "alliance_fund_treasury" in raw:
                 world.alliance_fund_treasury = max(0.0, float(raw["alliance_fund_treasury"] or 0.0))
         return world
+    # Partial / projection-only payload — only invent a world for true cold start.
+    mid_campaign = False
+    try:
+        mid_campaign = int(raw.get("tick") or raw.get("quarter") or 0) > 0
+    except (TypeError, ValueError):
+        mid_campaign = False
+    if not allow_fresh or mid_campaign or (_ENGINE_KEY in raw):
+        raise ValueError(
+            "campaign engine missing or corrupt — Restore last session or New Run"
+        )
     world = new_world()
     if "qin_pressure" in raw:
         world.qin_pressure = float(raw["qin_pressure"])
@@ -616,7 +634,9 @@ def export_snapshot(
     """Full WorldState JSON snapshot for Save / localStorage / file download."""
     import time
 
-    world = _world_from_ui(raw)
+    # Never let a broken in-memory blob export as a brand-new tick-0 campaign
+    # (that would wipe the browser session autosave after Advance).
+    world = _world_from_ui(raw, allow_fresh=True if not raw else False)
     eng = world.to_dict()
     return {
         "format": "warring-states-abm",
