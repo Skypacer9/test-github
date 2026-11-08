@@ -507,22 +507,26 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
         fear_delta, res_delta = -0.14, -0.07
         ag.state.status_threat = max(0.0, ag.state.status_threat - 0.06)
         ag.treasury = min(100.0, float(ag.treasury) + 8.0)
+        # Mild viability/vitality recovery on the recipient (not only cohesion)
+        ag.viability = min(100.0, float(ag.viability) + 3.5)
         world.meso.cohesion = min(100.0, world.meso.cohesion + 4.0)
         world.world.military_coalition = min(
             1.0, float(getattr(world.world, "military_coalition", 0.0)) + 0.04
         )
-        flavor = "arms stipend cools Fear of Qin; court holds the line a little longer"
+        flavor = "arms stipend cools Fear of Qin; viability +3.5 — court holds the line"
     elif act == "send_grain":
         fear_delta, res_delta = -0.07, -0.14
         ag.state.betrayal_memory = max(0.0, ag.state.betrayal_memory - 0.04)
         ag.grain = min(100.0, float(ag.grain) + 12.0)
+        # Mild viability/vitality recovery on the recipient (not only cohesion)
+        ag.viability = min(100.0, float(ag.viability) + 4.5)
         world.meso.cohesion = min(100.0, world.meso.cohesion + 3.0)
         demo = getattr(world, "demographics", None)
         if demo is not None and hasattr(demo, "courts"):
             court = demo.courts.get(tid) if hasattr(demo, "courts") else None
             if court is not None and hasattr(court, "satisfaction"):
                 court.satisfaction = min(1.0, float(court.satisfaction) + 0.05)
-        flavor = "grain relief eases Resentment; granaries steady the coalition"
+        flavor = "grain relief eases Resentment; viability +4.5 — granaries steady the court"
     else:  # broker_mediation
         fear_delta, res_delta = -0.09, -0.15
         ag.state.status_threat = max(0.0, ag.state.status_threat - 0.10)
@@ -600,20 +604,22 @@ def player_offensive(
     world: WorldState,
     attacker: str,
     target: str,
+    allies: list[str] | None = None,
+    *,
+    bloc: str | None = None,
 ) -> WorldState:
-    """Player-initiated Offensive: pick attacker + target (not fixed focus).
+    """Player Offensive — lead (+ optional allies / bloc) vs one target.
 
-    Soft global cap ~2–3 launches/quarter. Each launch checks that court's
-    force / levy extract / grain / viability — refuse if no front capacity;
-    weaken (force_scale < 1) when stretching a second/third front. Strong
-    courts may open several fronts; weak courts cannot. Ally betrayal spike
-    still fires via resolve_attack when anti-Qin strikes anti-Qin.
+    Soft global cap ~2–3 launches/quarter. Joint force shares power; grain /
+    casualty attrition is proportional across all attackers; target takes the
+    full defensive hit. Ally betrayal spikes when anti-Qin strikes anti-Qin.
+    Large capped memory spikes: target strongest → attackers lesser → nearby secondary.
     """
     from .conflict import (
         NEIGHBORS,
         ensure_econ_fields,
         offensive_capacity,
-        resolve_attack,
+        resolve_joint_attack,
     )
 
     ensure_econ_fields(world)
@@ -634,6 +640,7 @@ def player_offensive(
         world.last_player_offensive_error = note
         _append_player_log(world, f"[t={world.tick}] {note}")
         return world
+
     atk = world.agents.get(aid)
     dfn = world.agents.get(tid)
     if atk is None or dfn is None:
@@ -651,11 +658,35 @@ def player_offensive(
         world.last_player_offensive_error = note
         _append_player_log(world, f"[t={world.tick}] {note}")
         return world
-    nbrs = NEIGHBORS.get(aid, ())
-    if tid not in nbrs:
+
+    # Build attacker set: lead + allies, or same-bloc living peers if bloc= requested
+    raw_allies = [_normalize_invest_target(x) for x in (allies or [])]
+    bloc_key = str(bloc or "").strip().lower()
+    if bloc_key in ("anti_qin", "coalition") and getattr(atk, "bloc", "") == "anti_qin":
+        for oid, og in world.agents.items():
+            if oid in (aid, tid):
+                continue
+            if getattr(og, "bloc", "") == "anti_qin" and not getattr(og, "annexed", False):
+                if float(getattr(og, "viability", 0) or 0) > 0:
+                    raw_allies.append(oid)
+    elif bloc_key == "qin" and getattr(atk, "bloc", "") == "qin":
+        pass  # Qin is single-court lead for now
+
+    attackers: list[str] = [aid]
+    for oid in raw_allies:
+        if oid in (aid, tid) or oid not in OFFENSIVE_STATE_IDS:
+            continue
+        og = world.agents.get(oid)
+        if og is None or getattr(og, "annexed", False) or float(getattr(og, "viability", 0) or 0) <= 0:
+            continue
+        if oid not in attackers:
+            attackers.append(oid)
+
+    # Adjacency: at least one attacker must neighbor the target
+    if not any(tid in NEIGHBORS.get(a, ()) for a in attackers):
         note = (
-            f"Offensive failed: {atk.name} does not neighbor {dfn.name} "
-            f"(adjacent: {', '.join(nbrs) or '—'})"
+            f"Offensive failed: none of {[world.agents[a].name for a in attackers]} "
+            f"neighbor {dfn.name}"
         )
         world.last_player_offensive_error = note
         _append_player_log(world, f"[t={world.tick}] {note}")
@@ -671,87 +702,119 @@ def player_offensive(
         _append_player_log(world, f"[t={world.tick}] {note}")
         return world
 
-    cap = offensive_capacity(world, aid)
-    if not cap.get("can_launch"):
-        why = str(cap.get("reason") or "no_capacity")
+    # Capacity: lead must be able to launch; allies without capacity are dropped
+    caps: dict[str, dict] = {}
+    force_scales: dict[str, float] = {}
+    able: list[str] = []
+    for a in attackers:
+        caps[a] = offensive_capacity(world, a)
+        if caps[a].get("can_launch"):
+            able.append(a)
+            force_scales[a] = float(caps[a].get("force_scale") or 1.0)
+    if aid not in able:
+        cap = caps.get(aid) or {}
         note = (
             f"Offensive failed: {atk.name} lacks capacity for another front "
             f"(force={cap.get('force')}, levy={cap.get('levy')}, "
             f"grain={cap.get('grain')}, viability={cap.get('viability')}, "
-            f"opened={cap.get('opened')}/{cap.get('max_fronts')}, {why})"
+            f"opened={cap.get('opened')}/{cap.get('max_fronts')}, {cap.get('reason')})"
         )
         world.last_player_offensive_error = note
         world.last_player_offensive = dict(cap)
         _append_player_log(world, f"[t={world.tick}] {note}")
         return world
+    attackers = able
 
     pc = float(getattr(world, "player_political_capital", 100.0))
     tr = float(getattr(world, "player_treasury", 100.0))
-    if pc < OFFENSIVE_PC_COST or tr < OFFENSIVE_TR_COST:
+    # Joint marches cost a bit more PC/treasury
+    n_atk = len(attackers)
+    pc_cost = OFFENSIVE_PC_COST + 4.0 * (n_atk - 1)
+    tr_cost = OFFENSIVE_TR_COST + 5.0 * (n_atk - 1)
+    if pc < pc_cost or tr < tr_cost:
         note = (
-            f"Offensive failed: need Political Capital ≥{OFFENSIVE_PC_COST:.0f} and "
-            f"Treasury ≥{OFFENSIVE_TR_COST:.0f} (have PC={pc:.0f} Treasury={tr:.0f})"
+            f"Offensive failed: need Political Capital ≥{pc_cost:.0f} and "
+            f"Treasury ≥{tr_cost:.0f} for {n_atk} attacker(s) "
+            f"(have PC={pc:.0f} Treasury={tr:.0f})"
         )
         world.last_player_offensive_error = note
         _append_player_log(world, f"[t={world.tick}] {note}")
         return world
 
-    world.player_political_capital = pc - OFFENSIVE_PC_COST
-    world.player_treasury = tr - OFFENSIVE_TR_COST
+    world.player_political_capital = pc - pc_cost
+    world.player_treasury = tr - tr_cost
     world.player_offensive_actions_left = max(0, left - 1)
     fronts = dict(getattr(world, "player_offensive_fronts", None) or {})
-    fronts[aid] = int(fronts.get(aid, 0) or 0) + 1
+    for a in attackers:
+        fronts[a] = int(fronts.get(a, 0) or 0) + 1
     world.player_offensive_fronts = fronts
 
-    scale = float(cap.get("force_scale") or 1.0)
-    res = resolve_attack(world, aid, tid, force_scale=scale)
+    res = resolve_joint_attack(world, attackers, tid, force_scales=force_scales)
     if res.get("cancelled"):
-        # Refund player budget/purse if court could not actually march (broke mid-check)
-        world.player_political_capital = min(100.0, float(world.player_political_capital) + OFFENSIVE_PC_COST)
-        world.player_treasury = min(100.0, float(world.player_treasury) + OFFENSIVE_TR_COST)
+        world.player_political_capital = min(100.0, float(world.player_political_capital) + pc_cost)
+        world.player_treasury = min(100.0, float(world.player_treasury) + tr_cost)
         world.player_offensive_actions_left = left
-        fronts[aid] = max(0, int(fronts.get(aid, 1)) - 1)
-        if fronts[aid] <= 0:
-            fronts.pop(aid, None)
+        for a in attackers:
+            fronts[a] = max(0, int(fronts.get(a, 1)) - 1)
+            if fronts[a] <= 0:
+                fronts.pop(a, None)
         world.player_offensive_fronts = fronts
         note = (
-            f"Offensive cancelled: {atk.name} could not afford the march on {dfn.name} "
+            f"Offensive cancelled: joint march on {dfn.name} failed "
             f"({res.get('reason') or 'broke'})"
         )
         world.last_player_offensive_error = note
-        world.last_player_offensive = {**cap, **res}
+        world.last_player_offensive = {**res, "capacity_before": caps}
         _append_player_log(world, f"[t={world.tick}] {note}")
         return world
 
-    residual_after = offensive_capacity(world, aid)
+    # Memory spikes: target strongest → attackers lesser → nearby secondary
+    mem_counts: dict[str, int] = {}
+    try:
+        from .figure_memory import record_offensive
+
+        mem_counts = record_offensive(
+            world,
+            attackers=list(res.get("attackers") or attackers),
+            target=tid,
+            winner=str(res.get("winner") or ""),
+        )
+    except Exception:
+        mem_counts = {}
+
+    joint = bool(res.get("joint"))
+    contrib = res.get("contributions") or {}
     stretch = ""
-    if scale < 0.99:
-        stretch = f" stretched front (force×{scale:.2f});"
-    ally = ""
-    if getattr(atk, "bloc", "") == "anti_qin" and getattr(dfn, "bloc", "") == "anti_qin":
-        ally = " Ally betrayal spike applied."
+    if any(float(force_scales.get(a, 1)) < 0.99 for a in attackers):
+        stretch = " stretched fronts;"
+    betrayal = ""
+    if res.get("betrayal_members"):
+        betrayal = f" Ally betrayal spike ({', '.join(res['betrayal_members'])})."
+    names = "+".join(world.agents[a].name for a in attackers)
     note = (
-        f"Offensive: {atk.name} → {dfn.name} (−PC {OFFENSIVE_PC_COST:.0f}/−Treasury {OFFENSIVE_TR_COST:.0f});"
-        f"{stretch} winner={res.get('winner')} loser={res.get('loser')} "
+        f"{'Joint o' if joint else 'O'}ffensive: {names} → {dfn.name} "
+        f"(−PC {pc_cost:.0f}/−Treasury {tr_cost:.0f});{stretch} "
+        f"winner={res.get('winner')} loser={res.get('loser')} "
         f"atk_pow={res.get('atk_pow')} dfn_pow={res.get('dfn_pow')}; "
-        f"player launches left={world.player_offensive_actions_left}; "
-        f"{atk.name} residual fronts={residual_after.get('residual')}/"
-        f"{residual_after.get('max_fronts')}."
-        f"{ally}"
+        f"shares={{{', '.join(f'{k}:{v:.2f}' for k,v in contrib.items())}}}; "
+        f"mem target/atk/near={mem_counts.get('target',0)}/"
+        f"{mem_counts.get('attackers',0)}/{mem_counts.get('nearby',0)}; "
+        f"player launches left={world.player_offensive_actions_left}."
+        f"{betrayal}"
     )
     world.last_player_offensive = {
         **res,
-        "capacity_before": cap,
-        "capacity_after": residual_after,
+        "capacity_before": caps,
+        "memory_stamps": mem_counts,
         "player_launches_left": int(world.player_offensive_actions_left),
     }
     world.append_log(
         note,
         event_id="player_offensive",
         actor=aid,
-        action="offensive",
-        dials_fired=["trust", "resentment", "betrayal_memory", "viability", "resources"],
-        anchor="player Offensive (attacker+target)",
+        action="offensive_joint" if joint else "offensive",
+        dials_fired=["trust", "resentment", "betrayal_memory", "viability", "resources", "memory"],
+        anchor="player Offensive (lead+allies→target; proportional attrition; memory spikes)",
     )
     _append_player_log(world, f"[t={world.tick}] {note}")
     world.recompute_meso()
@@ -957,6 +1020,13 @@ def spend_alliance_fund(world: WorldState, purpose: str) -> WorldState:
     world.alliance_fund_spent_purposes = spent
     label = ALLIANCE_FUND_LABELS[pur]
     effect = ""
+    # Mild viability/vitality recovery for living anti-Qin recipients (shared spend)
+    via_bump = {"tech": 1.5, "agriculture": 2.5, "construction": 2.0, "military": 2.0}.get(pur, 1.5)
+    via_touched = 0
+    for ag in world.agents.values():
+        if ag.bloc == "anti_qin" and not getattr(ag, "annexed", False) and float(ag.viability) > 0:
+            ag.viability = min(100.0, float(ag.viability) + via_bump)
+            via_touched += 1
     if pur == "tech":
         world.world.adoption_meter = min(
             1.0, float(getattr(world.world, "adoption_meter", 0.0)) + 0.04
@@ -964,17 +1034,23 @@ def spend_alliance_fund(world: WorldState, purpose: str) -> WorldState:
         world.world.military_coalition = min(
             1.0, float(getattr(world.world, "military_coalition", 0.0)) + 0.02
         )
-        effect = f"adoption→{world.world.adoption_meter:.2f}, coal_mil↑"
+        effect = (
+            f"adoption→{world.world.adoption_meter:.2f}, coal_mil↑, "
+            f"viability+{via_bump:.1f}×{via_touched}"
+        )
     elif pur == "agriculture":
         for ag in world.agents.values():
             if ag.bloc == "anti_qin" and not getattr(ag, "annexed", False):
                 ag.grain = min(100.0, float(ag.grain) + 3.0)
                 ag.geographic_yield = min(1.0, float(ag.geographic_yield) + 0.01)
-        effect = "anti-Qin grain+3, yield+0.01"
+        effect = f"anti-Qin grain+3, yield+0.01, viability+{via_bump:.1f}×{via_touched}"
     elif pur == "construction":
         world.world.defense_mod = min(1.0, float(world.world.defense_mod) + 0.03)
         world.meso.cohesion = min(100.0, world.meso.cohesion + 2.0)
-        effect = f"defense_mod→{world.world.defense_mod:.2f}, cohesion+2"
+        effect = (
+            f"defense_mod→{world.world.defense_mod:.2f}, cohesion+2, "
+            f"viability+{via_bump:.1f}×{via_touched}"
+        )
     else:  # military
         world.world.military_coalition = min(
             1.0, float(getattr(world.world, "military_coalition", 0.0)) + 0.05
@@ -982,7 +1058,8 @@ def spend_alliance_fund(world: WorldState, purpose: str) -> WorldState:
         world.qin_pressure = max(0.0, float(world.qin_pressure) - 2.0)
         effect = (
             f"coal_mil→{world.world.military_coalition:.2f}, "
-            f"pressure→{world.qin_pressure:.0f}"
+            f"pressure→{world.qin_pressure:.0f}, "
+            f"viability+{via_bump:.1f}×{via_touched}"
         )
     note = (
         f"Alliance fund → {label} (−grain {g_cost:.0f}/−treasury {t_cost:.0f}): {effect}. "

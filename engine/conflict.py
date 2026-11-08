@@ -568,6 +568,193 @@ def resolve_attack(
         "cancelled": False,
         "desperate": bool(atk.desperate),
         "force_scale": round(scale, 3),
+        "attackers": [attacker_id],
+        "contributions": {attacker_id: 1.0},
+    }
+
+
+def resolve_joint_attack(
+    world: "WorldState",
+    attacker_ids: list[str],
+    defender_id: str,
+    *,
+    force_scales: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    """Joint/alliance offensive: shared force; attrition split by contribution.
+
+    - Combined attacker power = Σ mil(i)×scale(i)
+    - Campaign grain/treasury cost shared across all attackers ∝ contribution
+    - Casualty/viability attrition on the attacker side split ∝ contribution
+    - Defender still takes the **full** LOSS_VIABILITY_HIT / defense spend / yield hit
+    - Ally betrayal spikes if any anti-Qin participant strikes an anti-Qin peer
+    """
+    ensure_econ_fields(world)
+    force_scales = dict(force_scales or {})
+    # Dedup preserve order; drop empty/defender
+    seen: set[str] = set()
+    aids: list[str] = []
+    for raw in attacker_ids:
+        aid = str(raw or "").strip().lower()
+        if not aid or aid == defender_id or aid in seen:
+            continue
+        if aid not in world.agents or not _alive(world.agents[aid]):
+            continue
+        seen.add(aid)
+        aids.append(aid)
+    if not aids or defender_id not in world.agents or not _alive(world.agents[defender_id]):
+        return {
+            "attacker": (aids[0] if aids else ""),
+            "attackers": aids,
+            "defender": defender_id,
+            "cancelled": True,
+            "reason": "no_valid_side",
+        }
+
+    dfn = world.agents[defender_id]
+    # Betrayal: each anti-Qin participant vs anti-Qin target
+    betrayal_members: list[str] = []
+    for aid in aids:
+        atk = world.agents[aid]
+        if getattr(atk, "bloc", "") == "anti_qin" and getattr(dfn, "bloc", "") == "anti_qin":
+            try:
+                _apply_ally_betrayal_spike(world, aid, defender_id)
+                betrayal_members.append(aid)
+            except Exception:
+                pass
+
+    # Contribution weights from fielded force × scale
+    weights: dict[str, float] = {}
+    for aid in aids:
+        sc = max(0.25, min(1.25, float(force_scales.get(aid, 1.0) or 1.0)))
+        mil = military_strength(world, aid) * sc
+        if world.agents[aid].desperate:
+            mil *= 1.12
+        weights[aid] = max(0.05, mil)
+    total_w = sum(weights.values()) or 1.0
+    shares = {aid: weights[aid] / total_w for aid in aids}
+
+    # Shared campaign cost (one attack purse) — proportional; never zero a court alone
+    for aid in aids:
+        ag = world.agents[aid]
+        g_cost = ATTACK_COST_GRAIN * shares[aid]
+        t_cost = ATTACK_COST_TREASURY * shares[aid]
+        if float(ag.grain) < g_cost * 0.5 or float(ag.treasury) < t_cost * 0.5:
+            return {
+                "attacker": aids[0],
+                "attackers": aids,
+                "defender": defender_id,
+                "cancelled": True,
+                "reason": f"broke:{aid}",
+                "contributions": {k: round(v, 3) for k, v in shares.items()},
+            }
+    for aid in aids:
+        ag = world.agents[aid]
+        ag.grain = max(0.0, float(ag.grain) - ATTACK_COST_GRAIN * shares[aid])
+        ag.treasury = max(0.0, float(ag.treasury) - ATTACK_COST_TREASURY * shares[aid])
+
+    if can_afford_defense(dfn):
+        spend_defense(dfn)
+        d_pow = military_strength(world, defender_id)
+    else:
+        d_pow = 0.5 * military_strength(world, defender_id)
+
+    a_pow = sum(weights.values())
+    bias = 0.04 if (world.tick + sum(hash(a) for a in aids) + hash(defender_id)) % 2 == 0 else -0.04
+    atk_wins = (a_pow + bias) >= d_pow
+    lead = aids[0]
+
+    if atk_wins:
+        # Target takes FULL viability hit; attackers share winner exhaustion ∝ contribution
+        dfn.viability = max(0.0, float(dfn.viability) - LOSS_VIABILITY_HIT)
+        for aid in aids:
+            ag = world.agents[aid]
+            ag.viability = max(0.0, float(ag.viability) - WINNER_EXHAUSTION * shares[aid])
+        # Spoils: lead takes steal, then redistribute grain/treasury slice to allies ∝ share
+        spoils = steal_resources(world.agents[lead], dfn)
+        if len(aids) > 1 and spoils:
+            for aid in aids[1:]:
+                g_share = float(spoils.get("grain") or 0) * shares[aid]
+                t_share = float(spoils.get("treasury") or 0) * shares[aid]
+                world.agents[lead].grain = max(0.0, float(world.agents[lead].grain) - g_share)
+                world.agents[lead].treasury = max(0.0, float(world.agents[lead].treasury) - t_share)
+                world.agents[aid].grain = min(100.0, float(world.agents[aid].grain) + g_share)
+                world.agents[aid].treasury = min(100.0, float(world.agents[aid].treasury) + t_share)
+        dfn.geographic_yield = max(0.15, float(dfn.geographic_yield) - YIELD_LOSS_ON_DEFEAT)
+        for aid in aids:
+            if world.agents[aid].bloc == "anti_qin":
+                world.agents[aid].state.fear_of_qin = max(
+                    0.0, float(world.agents[aid].state.fear_of_qin) - 0.06 * shares[aid]
+                )
+        wid, lid = lead, defender_id
+    else:
+        # Attackers lose: FULL hit still on... user said target takes full hit always for defense?
+        # "Target still takes full hit" → defender casualty is full when they lose;
+        # when defenders win, attackers split LOSS_VIABILITY_HIT ∝ contribution; target takes WINNER_EXHAUSTION only once
+        for aid in aids:
+            ag = world.agents[aid]
+            ag.viability = max(0.0, float(ag.viability) - LOSS_VIABILITY_HIT * shares[aid])
+            ag.geographic_yield = max(
+                0.15, float(ag.geographic_yield) - YIELD_LOSS_ON_DEFEAT * shares[aid]
+            )
+        dfn.viability = max(0.0, float(dfn.viability) - WINNER_EXHAUSTION)
+        # Target (winner) steals from lead; proportional drain already applied via shares on attackers
+        spoils = steal_resources(dfn, world.agents[lead])
+        # Also skim proportional leftovers from allies so lead is not the only purse
+        for aid in aids[1:]:
+            g_take = SPOILS_FRACTION * float(world.agents[aid].grain) * shares[aid]
+            t_take = SPOILS_FRACTION * float(world.agents[aid].treasury) * shares[aid]
+            world.agents[aid].grain = max(0.0, float(world.agents[aid].grain) - g_take)
+            world.agents[aid].treasury = max(0.0, float(world.agents[aid].treasury) - t_take)
+            dfn.grain = min(100.0, float(dfn.grain) + g_take)
+            dfn.treasury = min(100.0, float(dfn.treasury) + t_take)
+            spoils["grain"] = round(float(spoils.get("grain") or 0) + g_take, 1)
+            spoils["treasury"] = round(float(spoils.get("treasury") or 0) + t_take, 1)
+        wid, lid = defender_id, lead
+
+    # Trust/resentment: each attacker ↔ defender
+    for aid in aids:
+        set_trust(
+            world.trust,
+            aid,
+            defender_id,
+            saturating_trust_hit(get_trust(world.trust, aid, defender_id), WAR_TRUST_HIT),
+        )
+        set_trust(
+            world.trust,
+            defender_id,
+            aid,
+            saturating_trust_hit(get_trust(world.trust, defender_id, aid), WAR_TRUST_HIT),
+        )
+        world.agents[aid].state.resentment = min(
+            1.0, float(world.agents[aid].state.resentment) + WAR_RESENTMENT_HIT * shares[aid]
+        )
+    dfn.state.resentment = min(1.0, float(dfn.state.resentment) + WAR_RESENTMENT_HIT * 1.15)
+    world.meso.cohesion = max(
+        0.0, float(world.meso.cohesion) - ATTACK_COHESION_TAX * (0.7 + 0.15 * len(aids))
+    )
+
+    annexed = False
+    if float(world.agents[lid].viability) <= 0.0:
+        annexed = annex_state(world, lid, wid)
+
+    return {
+        "attacker": lead,
+        "attackers": aids,
+        "defender": defender_id,
+        "winner": wid,
+        "loser": lid,
+        "atk_pow": round(a_pow, 3),
+        "dfn_pow": round(d_pow, 3),
+        "loser_viability": round(float(world.agents[lid].viability), 1),
+        "winner_viability": round(float(world.agents[wid].viability), 1),
+        "spoils": spoils,
+        "annexed": annexed,
+        "cancelled": False,
+        "desperate": any(bool(world.agents[a].desperate) for a in aids),
+        "force_scale": round(sum(float(force_scales.get(a, 1.0) or 1.0) for a in aids) / len(aids), 3),
+        "contributions": {k: round(v, 3) for k, v in shares.items()},
+        "betrayal_members": betrayal_members,
+        "joint": len(aids) > 1,
     }
 
 

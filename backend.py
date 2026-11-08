@@ -407,11 +407,14 @@ def do_player_offensive(
     raw: dict[str, Any] | None,
     attacker: str,
     target: str,
+    allies: list[str] | None = None,
+    *,
+    bloc: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, str]], str | None]:
-    """Player Offensive — attacker + target pickers; capacity-gated."""
+    """Player Offensive — lead (+ allies/bloc) vs target; capacity + memory gated."""
     world = _world_from_ui(raw)
     before = len(world.episode)
-    eng_player_offensive(world, attacker, target)
+    eng_player_offensive(world, attacker, target, allies=allies, bloc=bloc)
     err = getattr(world, "last_player_offensive_error", None)
     return _project(world), _chat_from_new_logs(world, before), err
 

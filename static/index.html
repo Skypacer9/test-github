@@ -1353,10 +1353,13 @@
           <div class="player-purse">Actions this quarter — Invest <b id="invest-left">1</b>/1 · Alliance <b id="alliance-left">1</b>/1 · Intervene <b id="intervene-left">1</b>/1 · Offensive <b id="offensive-left">3</b>/3 · Fund purposes <b id="af-left">4</b>/4</div>
           <div class="offensive-box" id="offensive-box">
             <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%">Offensive — who attacks whom</span>
-            <select id="off-attacker" aria-label="Attacker state"></select>
+            <select id="off-attacker" aria-label="Lead attacker"></select>
             <select id="off-target" aria-label="Target state"></select>
             <button class="cmd danger" id="btn-offensive" type="button">Launch Offensive</button>
-            <div class="player-purse" id="off-capacity-line" style="width:100%">Pick attacker — residual front capacity appears here.</div>
+            <div class="off-allies" id="off-allies" style="width:100%;display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;margin-top:0.2rem">
+              <span class="label" style="font-size:0.62rem;letter-spacing:0.08em;color:var(--ws-paper-dim);text-transform:uppercase">Allies join</span>
+            </div>
+            <div class="player-purse" id="off-capacity-line" style="width:100%">Pick lead attacker — residual front capacity + ally checkboxes appear here.</div>
           </div>
           <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase">Invest</span>
           <select id="invest-target" aria-label="Target state">
@@ -1871,10 +1874,14 @@
     function refreshOffensivePickers(agents, caps, neighbors) {
       const atkSel = $("off-attacker");
       const tgtSel = $("off-target");
+      const alliesBox = $("off-allies");
       if (!atkSel || !tgtSel) return;
       const ags = agents || {};
       const prevA = atkSel.value;
       const prevT = tgtSel.value;
+      const prevAllies = new Set(
+        Array.from(document.querySelectorAll("#off-allies input[type=checkbox]:checked")).map((el) => el.value)
+      );
       const living = FIELD_IDS.filter((id) => {
         const ag = ags[id] || {};
         return !(ag.annexed || Number(ag.viability) <= 0);
@@ -1894,8 +1901,9 @@
       else if (living.indexOf("chu") >= 0) atkSel.value = "chu";
       else if (living[0]) atkSel.value = living[0];
 
-      function fillTargets() {
+      function fillTargetsAndAllies() {
         const aid = atkSel.value;
+        const leadBloc = String((ags[aid] && ags[aid].bloc) || "");
         const nbrs = (neighbors && neighbors[aid]) || [];
         const opts = living.filter((id) => id !== aid && nbrs.indexOf(id) >= 0);
         const fallback = living.filter((id) => id !== aid);
@@ -1906,10 +1914,37 @@
           return `<option value="${esc(id)}"${nbrs.indexOf(id) < 0 ? " disabled" : ""}>${esc(name + adj)}</option>`;
         }).join("") || `<option value="">No living neighbor</option>`;
         if (prevT && tgtSel.querySelector(`option[value="${prevT}"]:not([disabled])`)) tgtSel.value = prevT;
+
+        if (alliesBox) {
+          const tid = tgtSel.value;
+          const peers = living.filter((id) => {
+            if (id === aid || id === tid) return false;
+            const bloc = String((ags[id] && ags[id].bloc) || "");
+            return leadBloc && bloc === leadBloc;
+          });
+          alliesBox.innerHTML =
+            `<span class="label" style="font-size:0.62rem;letter-spacing:0.08em;color:var(--ws-paper-dim);text-transform:uppercase">Allies join</span>` +
+            (peers.length
+              ? peers.map((id) => {
+                  const name = (ags[id] && ags[id].name) || STATE_LABEL[id] || id;
+                  const cap = (caps && caps[id]) || {};
+                  const ok = cap.can_launch !== false;
+                  const checked = prevAllies.has(id) ? " checked" : "";
+                  return `<label class="chk" style="font-size:0.68rem"><input type="checkbox" value="${esc(id)}"${checked}${ok ? "" : " disabled"} /> ${esc(name)}${ok ? "" : " (no capacity)"}</label>`;
+                }).join("")
+              : `<span style="font-size:0.65rem;color:var(--ws-paper-dim)">No same-bloc allies available</span>`);
+          alliesBox.querySelectorAll("input[type=checkbox]").forEach((el) => {
+            el.onchange = () => paintOffensiveCapacity();
+          });
+        }
       }
-      fillTargets();
+      fillTargetsAndAllies();
       atkSel.onchange = () => {
-        fillTargets();
+        fillTargetsAndAllies();
+        paintOffensiveCapacity();
+      };
+      tgtSel.onchange = () => {
+        fillTargetsAndAllies();
         paintOffensiveCapacity();
       };
       paintOffensiveCapacity();
@@ -3128,9 +3163,12 @@ function renderProfile(prof) {
     $("btn-offensive").onclick = () => run("Offensive", () => {
       const attacker = ($("off-attacker") && $("off-attacker").value) || "";
       const target = ($("off-target") && $("off-target").value) || "";
+      const allies = Array.from(document.querySelectorAll("#off-allies input[type=checkbox]:checked"))
+        .map((el) => el.value)
+        .filter(Boolean);
       return api("/api/offensive", {
         method: "POST",
-        body: JSON.stringify({ attacker, target }),
+        body: JSON.stringify({ attacker, target, allies }),
       });
     });
     async function spendAllianceFund(purpose, label) {

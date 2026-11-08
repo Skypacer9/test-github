@@ -833,17 +833,28 @@ def api_player_action():
 
 @app.post("/api/offensive")
 def api_offensive():
-    """Player Offensive — body: {attacker, target}. Soft cap 3/quarter; court capacity gated."""
+    """Player Offensive — body: {attacker, target, allies?, bloc?}.
+
+    Soft cap 3/quarter. Joint force shares attrition ∝ contribution; target full hit.
+    Memory spikes: target > attackers > nearby.
+    """
     blocked = _mutate_guard()
     if blocked:
         return blocked
     st = _ensure()
     body = request.get_json(silent=True) or {}
-    attacker = str(body.get("attacker") or body.get("from") or "").strip().lower()
+    attacker = str(body.get("attacker") or body.get("from") or body.get("lead") or "").strip().lower()
     target = str(body.get("target") or body.get("to") or body.get("defender") or "").strip().lower()
+    raw_allies = body.get("allies") or body.get("with") or []
+    if isinstance(raw_allies, str):
+        raw_allies = [a.strip() for a in raw_allies.split(",") if a.strip()]
+    allies = [str(a).strip().lower() for a in (raw_allies or []) if str(a).strip()]
+    bloc = str(body.get("bloc") or "").strip().lower() or None
     if not attacker or not target:
         return jsonify({"ok": False, "error": "attacker and target required"}), 400
-    projected, msgs, err = do_player_offensive(st, attacker, target)
+    projected, msgs, err = do_player_offensive(
+        st, attacker, target, allies=allies, bloc=bloc
+    )
     pack = _pack(projected, msgs)
     pack["offensive"] = projected.get("last_player_offensive")
     pack["player_offensive_actions_left"] = int(

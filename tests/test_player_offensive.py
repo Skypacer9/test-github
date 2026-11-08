@@ -90,3 +90,87 @@ def test_resolve_attack_force_scale_weakens():
     assert full.get("cancelled") is False
     assert thin.get("cancelled") is False
     assert float(thin["atk_pow"]) < float(full["atk_pow"])
+
+
+def test_joint_offensive_shares_attrition_and_memory_hierarchy():
+    from engine.conflict import resolve_joint_attack
+    from engine.figure_memory import (
+        OFFENSIVE_SAL_ATTACKER,
+        OFFENSIVE_SAL_NEARBY,
+        OFFENSIVE_SAL_TARGET,
+        memories_for,
+        record_offensive,
+    )
+
+    w = new_world()
+    for sid in ("chu", "qi", "han"):
+        w.agents[sid].grain = 90
+        w.agents[sid].treasury = 90
+        w.agents[sid].viability = 90
+    chu_v0 = float(w.agents["chu"].viability)
+    qi_v0 = float(w.agents["qi"].viability)
+    qin_v0 = float(w.agents["qin"].viability)
+    res = resolve_joint_attack(w, ["chu", "qi"], "qin", force_scales={"chu": 1.0, "qi": 1.0})
+    assert res.get("cancelled") is False
+    assert res.get("joint") is True
+    assert set(res.get("attackers") or []) == {"chu", "qi"}
+    shares = res.get("contributions") or {}
+    assert set(shares) == {"chu", "qi"}
+    assert abs(sum(shares.values()) - 1.0) < 1e-6
+    # Both attackers take proportional exhaustion (or loss hit); target takes a hit either way
+    assert float(w.agents["chu"].viability) < chu_v0
+    assert float(w.agents["qi"].viability) < qi_v0
+    assert float(w.agents["qin"].viability) != qin_v0 or res.get("winner") == "qin"
+
+    stamps = record_offensive(w, attackers=["chu", "qi"], target="qin", winner=res.get("winner"))
+    assert stamps["target"] >= 1
+    assert stamps["attackers"] >= 1
+    # Salience hierarchy on stored rows
+    from engine.figures import FIGURES
+
+    def max_sal(home: str) -> float:
+        best = 0.0
+        for fig in FIGURES:
+            if fig.get("home") != home:
+                continue
+            for row in memories_for(w, fig["id"], limit=4):
+                if row.get("kind") == "offensive":
+                    best = max(best, float(row.get("salience") or 0))
+        return best
+
+    assert max_sal("qin") >= OFFENSIVE_SAL_TARGET - 0.01
+    assert max_sal("chu") >= OFFENSIVE_SAL_ATTACKER - 0.01
+    assert max_sal("chu") < OFFENSIVE_SAL_TARGET
+    # Nearby (e.g. wei/han) secondary if stamped
+    near = max(max_sal("han"), max_sal("wei"), max_sal("zhao"))
+    if stamps["nearby"] > 0:
+        assert near <= OFFENSIVE_SAL_NEARBY + 0.01
+        assert near < OFFENSIVE_SAL_ATTACKER
+
+
+def test_invest_and_fund_recover_viability():
+    from engine.tick import player_action, spend_alliance_fund
+
+    w = new_world()
+    w.agents["chu"].viability = 60.0
+    player_action(w, "send_grain", "chu")
+    assert w.last_player_action_error is None
+    assert float(w.agents["chu"].viability) >= 64.0
+
+    w2 = new_world()
+    w2.agents["qi"].viability = 55.0
+    w2.player_invest_actions_left = 1
+    player_action(w2, "fund_military", "qi")
+    assert w2.last_player_action_error is None
+    assert float(w2.agents["qi"].viability) >= 58.0
+
+    w3 = new_world()
+    for ag in w3.agents.values():
+        if ag.bloc == "anti_qin":
+            ag.viability = 50.0
+    w3.alliance_fund_grain = 40.0
+    w3.alliance_fund_treasury = 40.0
+    before = float(w3.agents["chu"].viability)
+    spend_alliance_fund(w3, "agriculture")
+    assert w3.last_alliance_fund_error is None
+    assert float(w3.agents["chu"].viability) > before
