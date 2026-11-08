@@ -6,7 +6,7 @@ from copy import deepcopy
 from typing import Any
 
 from engine.action_labels import short_label, who_vs_qin_line
-from engine.demographics import field_demographics_summary
+from engine.demographics import field_court_economy, field_demographics_summary
 from engine.dossiers import dossier_for, dossier_bundle
 from engine.geo import M4_TABLE, STATE_GEO, state_geo_card
 from engine.packets import conflict_score, packet_public_view, resolve_packet_id
@@ -119,6 +119,7 @@ def _project(world: WorldState) -> dict[str, Any]:
     ][-12:]
     geo_by_state = {sid: state_geo_card(sid) for sid in STATE_GEO}
     demography = field_demographics_summary(world)
+    court_economy = field_court_economy(world)
     return {
         "tick": world.tick,
         "quarter": max(1, world.tick) if world.tick else 1,
@@ -197,6 +198,7 @@ def _project(world: WorldState) -> dict[str, Any]:
         },
         # PLACEHOLDER demographics / satisfaction / available manpower
         "demographics": demography,
+        "court_economy": court_economy,
         "satisfaction": float(demography.get("mean_satisfaction", 0.0)),
         "available_manpower": float(demography.get("mean_manpower", 0.0)),
         "run_ended": bool(getattr(world, "run_ended", False)),

@@ -763,6 +763,84 @@
       gap: 0.35rem;
       margin: 0 0 0.35rem;
     }
+    .field-panel h2 .field-click-hint {
+      font-family: "Source Sans 3", sans-serif;
+      font-size: 0.62rem;
+      font-weight: 400;
+      letter-spacing: 0.04em;
+      text-transform: none;
+      color: var(--ws-paper-dim);
+      margin-left: 0.55rem;
+    }
+    .faction {
+      cursor: pointer;
+      position: relative;
+    }
+    .faction:focus-visible {
+      outline: 2px solid var(--ws-electric);
+      outline-offset: 2px;
+    }
+    .faction.dossier-on {
+      border-color: var(--ws-electric);
+      box-shadow: 0 0 0 1px rgba(92,200,232,0.35);
+    }
+    .faction .meter.scale-meter label span {
+      color: var(--ws-sage, #9bb89a);
+    }
+    .faction .meter.weight-meter label span {
+      color: var(--ws-gold-bright);
+    }
+    .court-dossier {
+      margin: 0 0 0.4rem;
+      padding: 0.4rem 0.5rem 0.45rem;
+      border: 1px solid rgba(166,124,82,0.35);
+      background: rgba(0,0,0,0.28);
+      border-radius: 6px;
+    }
+    .court-dossier[hidden] { display: none !important; }
+    .court-dossier-head {
+      display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap;
+      margin-bottom: 0.35rem;
+    }
+    .court-dossier-head strong {
+      font-family: Cinzel, serif; font-size: 0.78rem; color: var(--ws-gold-bright);
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .dossier-hint {
+      font-size: 0.62rem; color: var(--ws-paper-dim); flex: 1 1 auto;
+    }
+    .court-dossier-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.45rem 0.65rem;
+      font-size: 0.7rem;
+      line-height: 1.35;
+      color: var(--ws-paper);
+    }
+    @media (max-width: 1280px) {
+      .court-dossier-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 900px) {
+      .court-dossier-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .court-dossier-grid .dcol h4 {
+      margin: 0 0 0.2rem; font-family: Cinzel, serif; font-size: 0.62rem;
+      letter-spacing: 0.1em; text-transform: uppercase; color: var(--ws-bronze);
+    }
+    .court-dossier-grid .dcol ul {
+      margin: 0; padding: 0; list-style: none;
+    }
+    .court-dossier-grid .dcol li {
+      display: flex; justify-content: space-between; gap: 0.5rem;
+      border-bottom: 1px solid rgba(166,124,82,0.12);
+      padding: 0.08rem 0;
+    }
+    .court-dossier-grid .dcol li span:last-child {
+      color: var(--ws-gold-bright); font-variant-numeric: tabular-nums; text-align: right;
+    }
+    .court-dossier-grid .note {
+      font-size: 0.6rem; color: var(--ws-paper-dim); margin-top: 0.25rem;
+    }
     @media (max-width: 1200px) {
       .field-panel .factions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     }
@@ -1130,9 +1208,17 @@
     </header>
 
     <section class="panel field-panel">
-      <h2>Field · Seven States</h2>
+      <h2>Field · Seven States <span class="field-click-hint">click a state · production, manpower regen, geo, alliances</span></h2>
       <div class="factions" id="factions">
         <!-- cards filled by JS for Qin Chu Qi Zhao Han Wei Yan -->
+      </div>
+      <div class="court-dossier" id="court-dossier" hidden>
+        <div class="court-dossier-head">
+          <strong id="dossier-title">Court dossier</strong>
+          <span class="dossier-hint">Production · manpower regen · demographics · geo · tech · trust</span>
+          <button type="button" class="cmd ghost" id="btn-dossier-close">Close</button>
+        </div>
+        <div class="court-dossier-grid" id="dossier-body"></div>
       </div>
 
       <div class="meso">
@@ -1320,6 +1406,8 @@
     let skipNextAutosave = false;
     let lastBudget = { invest: 1, allianceAttempt: 1, intervene: 1, allianceFundSpent: [] };
     let lastCounselSession = { open: false, figure_id: "", channel: "", mode: "" };
+    let lastFieldState = null;
+    let dossierStateId = null;
 
     const OCEAN_KEYS = [
       ["openness", "Openness"],
@@ -1410,6 +1498,10 @@
         art.className = "faction " + id;
         art.id = "card-" + id;
         art.dataset.id = id;
+        art.tabIndex = 0;
+        art.setAttribute("role", "button");
+        art.setAttribute("aria-pressed", "false");
+        art.title = "Open court dossier — demographics, geo, tech, trust";
         const fearMeter = (id === "qin")
           ? `<div class="meter"><label>Fear of Qin <span id="v-${id}-fear">N/A</span></label>` +
             `<div class="bar"><i id="b-${id}-fear" style="width:0;opacity:.35"></i></div></div>`
@@ -1420,21 +1512,193 @@
           `<h3 id="name-${id}">${meta.name}</h3></div>` +
           `<div class="stance" id="stance-${id}">—</div>` +
           `<div class="warn-desperation">Desperate — raiding for grain</div>` +
+          `<div class="meter scale-meter"><label>Population <span id="v-${id}-pop">—</span></label>` +
+            `<div class="bar"><i id="b-${id}-pop"></i></div></div>` +
+          `<div class="meter scale-meter"><label>Manpower <span id="v-${id}-man">—</span></label>` +
+            `<div class="bar"><i id="b-${id}-man"></i></div></div>` +
           `<div class="meter"><label>Viability <span id="v-${id}-via">—</span></label>` +
             `<div class="bar"><i id="b-${id}-via"></i></div></div>` +
           `<div class="meter"><label>Grain · Treasury <span id="v-${id}-resrc">—</span></label>` +
             `<div class="bar"><i id="b-${id}-resrc"></i></div></div>` +
-          `<div class="meter"><label>Military <span id="v-${id}-mil">—</span></label>` +
+          `<div class="meter weight-meter"><label>Force weight <span id="v-${id}-force">—</span></label>` +
+            `<div class="bar"><i id="b-${id}-force"></i></div></div>` +
+          `<div class="meter"><label>Mil tech <span id="v-${id}-mil">—</span></label>` +
             `<div class="bar"><i id="b-${id}-mil"></i></div></div>` +
-          `<div class="meter"><label>Yield <span id="v-${id}-yield">—</span></label>` +
-            `<div class="bar"><i id="b-${id}-yield"></i></div></div>` +
           `<div class="meter"><label>Tech adopt <span id="v-${id}-tech">—</span></label>` +
             `<div class="bar"><i id="b-${id}-tech"></i></div></div>` +
           `<div class="meter"><label>Resentment <span id="v-${id}-res">0</span></label>` +
             `<div class="bar"><i id="b-${id}-res"></i></div></div>` +
           fearMeter;
+        art.addEventListener("click", () => openCourtDossier(id));
+        art.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") {
+            ev.preventDefault();
+            openCourtDossier(id);
+          }
+        });
         box.appendChild(art);
       });
+    }
+
+    function fmt01(v, digits) {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return "—";
+      const d = digits == null ? 2 : digits;
+      return n <= 1.0001 ? (n * 100).toFixed(d).replace(/\.00$/, "") + "%" : String(Math.round(n * 10) / 10);
+    }
+
+    function openCourtDossier(id) {
+      dossierStateId = id;
+      FIELD_IDS.forEach((fid) => {
+        const card = $("card-" + fid);
+        if (card) {
+          card.classList.toggle("dossier-on", fid === id);
+          card.setAttribute("aria-pressed", fid === id ? "true" : "false");
+        }
+      });
+      paintCourtDossier(lastFieldState, id);
+    }
+
+    function closeCourtDossier() {
+      dossierStateId = null;
+      FIELD_IDS.forEach((fid) => {
+        const card = $("card-" + fid);
+        if (card) {
+          card.classList.remove("dossier-on");
+          card.setAttribute("aria-pressed", "false");
+        }
+      });
+      const box = $("court-dossier");
+      if (box) box.hidden = true;
+    }
+
+    function forceWeight(mil, manpower) {
+      const m = Number(mil);
+      const p = Number(manpower);
+      if (!Number.isFinite(m) || !Number.isFinite(p)) return NaN;
+      return Math.max(0, Math.min(1, m * p));
+    }
+
+    function signedFlow(v, digits) {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return "—";
+      const d = digits == null ? 2 : digits;
+      const body = Math.abs(n).toFixed(d).replace(/\.00$/, "");
+      if (n > 0) return "+" + body;
+      if (n < 0) return "−" + body;
+      return body;
+    }
+
+    function paintCourtDossier(s, id) {
+      const box = $("court-dossier");
+      const body = $("dossier-body");
+      const title = $("dossier-title");
+      if (!box || !body || !title) return;
+      if (!s || !id) {
+        box.hidden = true;
+        return;
+      }
+      const meta = FIELD_META[id] || { name: id, zh: id };
+      const ag = (s.agents || {})[id] || {};
+      const demo = (((s.demographics || {}).courts) || {})[id] || {};
+      const eco = (((s.court_economy || {}).courts) || {})[id] || {};
+      const geo = (((s.m4 || {}).by_state) || {})[id] || [];
+      const m2 = s.m2 || {};
+      const milMap = m2.military || {};
+      const adoptMap = m2.adoption_mean || {};
+      const logistics = m2.logistics || {};
+      const levyTech = m2.levy_tech || {};
+      const siege = m2.siege || {};
+      const trust = s.trust || {};
+      const packets = ag.packets || ag.packet_views || [];
+      const mil = milMap[id] != null ? milMap[id] : ag.military;
+      const man = eco.manpower != null ? eco.manpower : demo.available_manpower;
+      const fw = forceWeight(mil, man);
+      const trustRows = Object.entries(trust)
+        .filter(([k]) => k.startsWith(id + "->") || k.endsWith("->" + id))
+        .sort((a, b) => Number(b[1]) - Number(a[1]))
+        .slice(0, 8);
+
+      title.textContent = meta.name + " · court dossier";
+      const prodLis = [
+        ["Production power", Number.isFinite(Number(eco.production_power))
+          ? Number(eco.production_power).toFixed(2) + " /Q"
+          : "—"],
+        ["Grain income", signedFlow(eco.grain_income_q) + " /Q"],
+        ["Treasury income", signedFlow(eco.treasury_income_q) + " /Q"],
+        ["Geographic yield", fmt01(eco.geographic_yield != null ? eco.geographic_yield : ag.geographic_yield)],
+        ["Grain stock", Number.isFinite(Number(eco.grain_stock)) ? Math.round(Number(eco.grain_stock)) : (Number.isFinite(Number(ag.grain)) ? Math.round(Number(ag.grain)) : "—")],
+        ["Treasury stock", Number.isFinite(Number(eco.treasury_stock)) ? Math.round(Number(eco.treasury_stock)) : (Number.isFinite(Number(ag.treasury)) ? Math.round(Number(ag.treasury)) : "—")],
+        ["Viability regen", signedFlow(eco.viability_regen_q, 2) + " /Q"],
+        ["Bonuses", [
+          eco.rice_bonus ? "Chu rice" : null,
+          eco.fa_bonus ? "Qin fa" : null,
+          eco.pressure_tax ? "Qin-pressure tax" : null,
+          eco.desperate ? "Desperate" : null,
+          eco.annexed ? "Annexed" : null,
+        ].filter(Boolean).join(" · ") || "—"],
+      ].map(([k, v]) => `<li><span>${esc(k)}</span><span>${esc(v)}</span></li>`).join("");
+
+      const demoLis = [
+        ["Population", fmt01(demo.population)],
+        ["Manpower now", fmt01(man)],
+        ["Manpower target", fmt01(eco.manpower_target)],
+        ["Manpower gap", signedFlow(eco.manpower_gap, 3)],
+        ["Regen rate λ", Number.isFinite(Number(eco.manpower_regen_rate))
+          ? Number(eco.manpower_regen_rate).toFixed(3)
+          : "—"],
+        ["Manpower Δ /Q", signedFlow(eco.manpower_delta_q, 4)],
+        ["Levy extract", fmt01(eco.levy_extract)],
+        ["Satisfaction", fmt01(demo.satisfaction)],
+        ["Levy base", fmt01(demo.levy_base)],
+        ["Urban share", fmt01(demo.urban_share)],
+        ["Monetization", fmt01(demo.monetization_index)],
+        ["Registration", fmt01(demo.registration_intensity)],
+        ["Source", demo.source_tier || "—"],
+      ].map(([k, v]) => `<li><span>${esc(k)}</span><span>${esc(v)}</span></li>`).join("");
+
+      const geoLis = (Array.isArray(geo) ? geo : []).slice(0, 5).map((g) =>
+        `<li><span>${esc(g.label || g.id || "node")}</span><span>` +
+        `${esc(g.kind || "")} · def ${fmt01(g.defense_mod)} · march ${fmt01(g.march_cost)} · levy ${fmt01(g.levy_mod)}</span></li>`
+      ).join("") || `<li><span>No geo nodes</span><span>—</span></li>`;
+
+      const techLis = [
+        ["Force weight", fmt01(fw) + " (mil×manpower)"],
+        ["Mil tech", fmt01(mil)],
+        ["Tech adoption", fmt01(adoptMap[id] != null ? adoptMap[id] : ag.tech_adopt)],
+        ["Logistics", fmt01(logistics[id])],
+        ["Levy tech", fmt01(levyTech[id])],
+        ["Siege", fmt01(siege[id])],
+        ["Qin mil advantage", (Number.isFinite(Number(s.qin_mil_advantage))
+          ? ((Number(s.qin_mil_advantage) >= 0 ? "+" : "") + Number(s.qin_mil_advantage).toFixed(2))
+          : "—")],
+        ["Tech quorum", ((s.tech_coupling || {}).tech_quorum_ok ? "OK" : "fail")],
+      ].map(([k, v]) => `<li><span>${esc(k)}</span><span>${esc(v)}</span></li>`).join("");
+
+      const allyLis = trustRows.map(([k, v]) =>
+        `<li><span>${esc(k)}</span><span>${esc(fmt01(v))}</span></li>`
+      ).join("") || `<li><span>No dyads</span><span>—</span></li>`;
+      const bloc = ag.bloc === "qin" ? "Qin bloc" : "Anti-Qin coalition seat";
+      const pkt = (packets || []).slice(0, 5).map((p) => {
+        if (typeof p === "string") return p;
+        return p.id || p.name || p.label || JSON.stringify(p);
+      }).join(", ") || "—";
+
+      body.innerHTML =
+        `<div class="dcol"><h4>Production</h4><ul>${prodLis}</ul>` +
+          `<div class="note">${esc((s.court_economy || {}).honesty || "Placeholder quarterly flows")}</div></div>` +
+        `<div class="dcol"><h4>Manpower · demography</h4><ul>${demoLis}</ul>` +
+          `<div class="note">Δ = λ × gap · saturating approach to extractable target</div></div>` +
+        `<div class="dcol"><h4>Geography (M4)</h4><ul>${geoLis}</ul>` +
+          `<div class="note">${esc((s.m4 || {}).honesty || "Coarse geo table")}</div></div>` +
+        `<div class="dcol"><h4>Tech · military</h4><ul>${techLis}</ul>` +
+          `<div class="note">Mil tech is intensity — force weight scales by manpower.</div></div>` +
+        `<div class="dcol"><h4>Alliances · trust</h4><ul>` +
+          `<li><span>Bloc</span><span>${esc(bloc)}</span></li>` +
+          `<li><span>Stance</span><span>${esc(ag.intention_label || ag.intention || "—")}</span></li>` +
+          allyLis +
+          `</ul><div class="note">Packets: ${esc(pkt)}</div></div>`;
+      box.hidden = false;
     }
 
     function refreshInvestTargets(agents) {
@@ -1783,7 +2047,7 @@ function renderProfile(prof) {
       }
     }
 
-    function agentMeter(id, ag) {
+    function agentMeter(id, ag, demo) {
       if (!ag) return;
       const card = $("card-" + id);
       const annexed = !!ag.annexed;
@@ -1805,6 +2069,13 @@ function renderProfile(prof) {
       else if (desperate) stance = (stance + " · Desperate");
       else if (ag.stance_mode === "optimizing") stance = (stance + " · Optimizing");
       setText("stance-" + id, stance);
+      const d = demo || {};
+      const pop = Number(d.population);
+      const man = Number(d.available_manpower);
+      setText("v-" + id + "-pop", Number.isFinite(pop) ? (Math.round(pop * 100) + "%") : "—");
+      bar("b-" + id + "-pop", Number.isFinite(pop) ? pop : 0);
+      setText("v-" + id + "-man", Number.isFinite(man) ? (Math.round(man * 100) + "%") : "—");
+      bar("b-" + id + "-man", Number.isFinite(man) ? man : 0);
       const via = Number(ag.viability);
       setText("v-" + id + "-via", Number.isFinite(via) ? Math.round(via) : "—");
       bar("b-" + id + "-via", Number.isFinite(via) ? via / 100 : 0);
@@ -1814,12 +2085,12 @@ function renderProfile(prof) {
         (Number.isFinite(g) ? Math.round(g) : "—") + " / " +
         (Number.isFinite(t) ? Math.round(t) : "—"));
       bar("b-" + id + "-resrc", Number.isFinite(pool) ? pool / 100 : 0);
-      const y = Number(ag.geographic_yield);
-      setText("v-" + id + "-yield", Number.isFinite(y) ? (Math.round(y * 100) + "%") : "—");
-      bar("b-" + id + "-yield", Number.isFinite(y) ? y : 0);
       const mil = Number(ag.military);
       setText("v-" + id + "-mil", Number.isFinite(mil) ? (Math.round(mil * 100) + "%") : "—");
       bar("b-" + id + "-mil", Number.isFinite(mil) ? mil : 0);
+      const fw = forceWeight(mil, man);
+      setText("v-" + id + "-force", Number.isFinite(fw) ? (Math.round(fw * 100) + "%") : "—");
+      bar("b-" + id + "-force", Number.isFinite(fw) ? fw : 0);
       const techA = Number(ag.tech_adopt);
       setText("v-" + id + "-tech", Number.isFinite(techA) ? (Math.round(techA * 100) + "%") : "—");
       bar("b-" + id + "-tech", Number.isFinite(techA) ? techA : 0);
@@ -2012,8 +2283,11 @@ function renderProfile(prof) {
         setText("pathway-reading", "—");
       }
 
+      lastFieldState = s;
       ensureFactionCards();
-      FIELD_IDS.forEach((id) => agentMeter(id, agents[id]));
+      const courts = ((s.demographics || {}).courts) || {};
+      FIELD_IDS.forEach((id) => agentMeter(id, agents[id], courts[id]));
+      if (dossierStateId) paintCourtDossier(s, dossierStateId);
 
       if (data.dialogue) {
         setText("dlg-speaker", data.dialogue.speaker || "Chronicler");
@@ -2592,6 +2866,8 @@ function renderProfile(prof) {
       await loadProfile(selectedFigure);
     }
     ensureFactionCards();
+    const btnDossierClose = $("btn-dossier-close");
+    if (btnDossierClose) btnDossierClose.addEventListener("click", closeCourtDossier);
     boot();
   </script>
 </body>
