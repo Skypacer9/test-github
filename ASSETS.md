@@ -96,3 +96,5 @@ Human bust JPGs in `static/portraits/<id>.jpg` — original playtest art.
 - Qi court (king_jian): teal `--ws-qi` / `#4A7C8C`
 
 Within a court, value/ornament differ; base hue stays with home allegiance. UI portrait-card borders use the same allegiance tokens.
+
+**Atmosphere** (`static/portraits/atmosphere.jpg`): field landscape thumbnail for broadcast counsel (all living figures hear).
