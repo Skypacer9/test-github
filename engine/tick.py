@@ -336,20 +336,22 @@ def _faction_snap(world: WorldState, aid: str) -> dict[str, float]:
 
 
 # Player soft-lock invest actions (HTML / CLI / API)
-# Four invest purposes — same labels/flow as Alliance fund spend
-PLAYER_ACTIONS = ("tech", "agriculture", "construction", "military")
+# Invest purposes — same labels/flow as Alliance fund (incl. Mediation)
+PLAYER_ACTIONS = ("tech", "agriculture", "construction", "military", "mediation")
 PLAYER_ACTION_LABELS = {
     "tech": "Tech",
     "agriculture": "Agriculture",
     "construction": "Construction",
     "military": "Military",
+    "mediation": "Mediation",
 }
 # Costs: (political_capital, treasury)
 PLAYER_ACTION_COSTS = {
     "tech": (10.0, 12.0),
     "agriculture": (8.0, 14.0),
-    "construction": (16.0, 10.0),
+    "construction": (14.0, 10.0),
     "military": (12.0, 18.0),
+    "mediation": (16.0, 10.0),
 }
 OVERCONFIDENCE_FEAR = 0.20  # Trust-Action Paradox threshold
 ANTI_QIN_TARGETS = ("chu", "qi", "zhao", "han", "wei", "yan")
@@ -459,10 +461,10 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
         "send_grain": "agriculture",
         "build": "construction",
         "infra": "construction",
-        "mediate": "construction",
-        "mediation": "construction",
-        "broker": "construction",
-        "broker_mediation": "construction",
+        "mediate": "mediation",
+        "mediation": "mediation",
+        "broker": "mediation",
+        "broker_mediation": "mediation",
         "mil": "military",
         "army": "military",
         "arms": "military",
@@ -476,7 +478,7 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
     if act not in PLAYER_ACTIONS:
         note = (
             f"Player action failed: unknown action {action!r} "
-            f"(need tech|agriculture|construction|military)"
+            f"(need tech|agriculture|construction|military|mediation)"
         )
         world.last_player_action_error = note
         world.append_log(note, event_id="player_action", action="error")
@@ -486,7 +488,7 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
     if left <= 0:
         note = (
             "Player action failed: invest budget spent this quarter "
-            "(Tech / Agriculture / Construction / Military share 1 action) — Advance to reset"
+            "(Tech / Agriculture / Construction / Military / Mediation share 1 action) — Advance to reset"
         )
         world.last_player_action_error = note
         world.append_log(note, event_id="player_action", action="budget")
@@ -545,6 +547,13 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
                 court.satisfaction = min(1.0, float(court.satisfaction) + 0.05)
         flavor = "agriculture relief eases Resentment; viability +4.5 — granaries steady the court"
     elif act == "construction":
+        fear_delta, res_delta = -0.06, -0.08
+        ag.state.status_threat = max(0.0, ag.state.status_threat - 0.06)
+        world.meso.cohesion = min(100.0, world.meso.cohesion + 3.0)
+        world.world.defense_mod = min(1.0, float(world.world.defense_mod) + 0.03)
+        ag.viability = min(100.0, float(ag.viability) + 2.5)
+        flavor = "construction works firm local defenses; viability +2.5"
+    elif act == "mediation":
         fear_delta, res_delta = -0.09, -0.15
         ag.state.status_threat = max(0.0, ag.state.status_threat - 0.10)
         from .nonlinear import saturating_up as _sat_up
@@ -555,9 +564,8 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
             world.trust[f"{other_id}->{tid}"] = _sat_up(world.trust.get(f"{other_id}->{tid}", 0.5), 0.10)
             world.trust[f"{tid}->{other_id}"] = _sat_up(world.trust.get(f"{tid}->{other_id}", 0.5), 0.10)
         world.meso.cohesion = min(100.0, world.meso.cohesion + 5.0)
-        world.world.defense_mod = min(1.0, float(world.world.defense_mod) + 0.02)
-        ag.viability = min(100.0, float(ag.viability) + 2.5)
-        flavor = "construction works cool Resentment, rebuild trust, and firm local defenses"
+        ag.viability = min(100.0, float(ag.viability) + 2.0)
+        flavor = "brokered mediation cools Resentment and rebuilds interstate trust"
         cw = civil_war_check(world, tid)
         if cw:
             civil_note = " " + cw
@@ -621,7 +629,7 @@ def player_action(world: WorldState, action: str, target: str = "chu") -> WorldS
         actor=tid,
         action=act,
         dials_fired=["fear_of_qin", "resentment", "defection_accumulator", "resources"],
-        anchor="player soft-lock invest (Tech / Agriculture / Construction / Military)",
+        anchor="player soft-lock invest (Tech / Agriculture / Construction / Military / Mediation)",
     )
     _append_player_log(world, f"[t={world.tick}] {note}")
     world.clamp()
@@ -687,18 +695,25 @@ def player_offensive(
         _append_player_log(world, f"[t={world.tick}] {note}")
         return world
 
-    # Build attacker set: lead + allies, or same-bloc living peers if bloc= requested
+    # Build attacker set: lead + allies, or anti-Qin alliance peers if bloc= requested.
+    # NO counter-alliances: Qin never gathers multi-court partners vs Chu/Qi hegemony.
     raw_allies = [_normalize_invest_target(x) for x in (allies or [])]
     bloc_key = str(bloc or "").strip().lower()
-    if bloc_key in ("anti_qin", "coalition") and getattr(atk, "bloc", "") == "anti_qin":
+    if bloc_key in ("qin", "counter", "counter_alliance", "hegemony_counter"):
+        note = (
+            "Offensive failed: no counter-alliances — only the anti-Qin joint alliance "
+            "may march together (Qin fights alone)"
+        )
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+    if bloc_key in ("anti_qin", "coalition", "alliance") and getattr(atk, "bloc", "") == "anti_qin":
         for oid, og in world.agents.items():
             if oid in (aid, tid):
                 continue
             if getattr(og, "bloc", "") == "anti_qin" and not getattr(og, "annexed", False):
                 if float(getattr(og, "viability", 0) or 0) > 0:
                     raw_allies.append(oid)
-    elif bloc_key == "qin" and getattr(atk, "bloc", "") == "qin":
-        pass  # Qin is single-court lead for now
 
     attackers: list[str] = [aid]
     for oid in raw_allies:
@@ -709,6 +724,30 @@ def player_offensive(
             continue
         if oid not in attackers:
             attackers.append(oid)
+
+    # Hard gate: multi-court offensive only for anti-Qin alliance members
+    if len(attackers) > 1:
+        if getattr(atk, "bloc", "") != "anti_qin":
+            note = (
+                "Offensive failed: no counter-alliances vs Chu/Qi hegemony — "
+                "joint marches are anti-Qin alliance only"
+            )
+            world.last_player_offensive_error = note
+            _append_player_log(world, f"[t={world.tick}] {note}")
+            return world
+        non_anti = [
+            a
+            for a in attackers
+            if getattr(world.agents.get(a), "bloc", "") != "anti_qin"
+        ]
+        if non_anti:
+            note = (
+                "Offensive failed: joint offensive admits anti-Qin alliance members only "
+                f"(rejected {non_anti})"
+            )
+            world.last_player_offensive_error = note
+            _append_player_log(world, f"[t={world.tick}] {note}")
+            return world
 
     # Adjacency: at least one attacker must neighbor the target
     if not any(tid in NEIGHBORS.get(a, ()) for a in attackers):
@@ -730,15 +769,20 @@ def player_offensive(
         _append_player_log(world, f"[t={world.tick}] {note}")
         return world
 
-    # Capacity: lead must be able to launch; allies without capacity are dropped
+    # Capacity: EVERY participating court must have its own residual front.
+    # Joint/alliance marches never ride only on the lead's quota — unable peers
+    # are dropped (solo lead may continue); each remaining court burns +1 front.
     caps: dict[str, dict] = {}
     force_scales: dict[str, float] = {}
     able: list[str] = []
+    dropped: list[str] = []
     for a in attackers:
         caps[a] = offensive_capacity(world, a)
         if caps[a].get("can_launch"):
             able.append(a)
             force_scales[a] = float(caps[a].get("force_scale") or 1.0)
+        else:
+            dropped.append(a)
     if aid not in able:
         cap = caps.get(aid) or {}
         note = (
@@ -772,10 +816,13 @@ def player_offensive(
     world.player_political_capital = pc - pc_cost
     world.player_treasury = tr - tr_cost
     world.player_offensive_actions_left = max(0, left - 1)
+    # Per-court front quota: each participant consumes one of ITS own fronts
     fronts = dict(getattr(world, "player_offensive_fronts", None) or {})
+    fronts_before = {a: int(fronts.get(a, 0) or 0) for a in attackers}
     for a in attackers:
         fronts[a] = int(fronts.get(a, 0) or 0) + 1
     world.player_offensive_fronts = fronts
+    fronts_after = {a: int(fronts.get(a, 0) or 0) for a in attackers}
 
     res = resolve_joint_attack(world, attackers, tid, force_scales=force_scales)
     if res.get("cancelled"):
@@ -815,9 +862,19 @@ def player_offensive(
     stretch = ""
     if any(float(force_scales.get(a, 1)) < 0.99 for a in attackers):
         stretch = " stretched fronts;"
+    drop_note = ""
+    if dropped:
+        drop_note = (
+            " Dropped (no own front capacity): "
+            + ", ".join(world.agents[d].name for d in dropped if d in world.agents)
+            + "."
+        )
     betrayal = ""
     if res.get("betrayal_members"):
         betrayal = f" Ally betrayal spike ({', '.join(res['betrayal_members'])})."
+    front_bits = ", ".join(
+        f"{a}:{fronts_before.get(a, 0)}→{fronts_after.get(a, 0)}" for a in attackers
+    )
     names = "+".join(world.agents[a].name for a in attackers)
     note = (
         f"{'Joint o' if joint else 'O'}ffensive: {names} → {dfn.name} "
@@ -825,16 +882,28 @@ def player_offensive(
         f"winner={res.get('winner')} loser={res.get('loser')} "
         f"atk_pow={res.get('atk_pow')} dfn_pow={res.get('dfn_pow')}; "
         f"shares={{{', '.join(f'{k}:{v:.2f}' for k,v in contrib.items())}}}; "
+        f"fronts[{front_bits}]; "
         f"mem target/atk/near={mem_counts.get('target',0)}/"
         f"{mem_counts.get('attackers',0)}/{mem_counts.get('nearby',0)}; "
         f"player launches left={world.player_offensive_actions_left}."
-        f"{betrayal}"
+        f"{drop_note}{betrayal}"
     )
+    trust_edges = 0
+    if joint and len(attackers) >= 2:
+        trust_edges = _raise_trust_among(
+            world, list(attackers), ALLIANCE_JOINT_TRUST_BUMP
+        )
+        if trust_edges:
+            note = note + f" Joint trust↑×{trust_edges}."
     world.last_player_offensive = {
         **res,
         "capacity_before": caps,
         "memory_stamps": mem_counts,
         "player_launches_left": int(world.player_offensive_actions_left),
+        "fronts_before": fronts_before,
+        "fronts_after": fronts_after,
+        "fronts_dropped": dropped,
+        "joint_trust_edges": trust_edges,
     }
     world.append_log(
         note,
@@ -849,6 +918,62 @@ def player_offensive(
     world.meso.pathway_soft = soft_pathway(world)
     world.clamp()
     return world
+
+
+def alliance_offensive(
+    world: WorldState,
+    target: str,
+    *,
+    lead: str | None = None,
+) -> WorldState:
+    """Joint alliance offensive — living members (prefer active) vs one target.
+
+    Shared attrition + memory spikes via player_offensive/resolve_joint_attack.
+    No counter-alliances: Qin/hegemony-side multi-court marches are refused.
+    """
+    tid = _normalize_invest_target(target)
+    snap = alliance_membership(world)
+    member_ids = list(snap.get("member_ids") or [])
+    active_ids = list(snap.get("active_ids") or [])
+    if not member_ids:
+        note = "Alliance offensive failed: no living anti-Qin alliance members"
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+    if tid in member_ids:
+        note = (
+            f"Alliance offensive failed: {tid} is an alliance member — "
+            "joint march is outward only (no fratricide via Alliance Offensive)"
+        )
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+
+    # Prefer active partners; fall back to all members — then keep only courts
+    # that still have their OWN residual front capacity (joint ≠ Chu freeloading).
+    from .conflict import NEIGHBORS, offensive_capacity
+
+    pool = [a for a in active_ids if a in member_ids] or list(member_ids)
+    able_pool = [a for a in pool if offensive_capacity(world, a).get("can_launch")]
+    if len(able_pool) < 2:
+        note = (
+            "Alliance offensive failed: need ≥2 members with their own front capacity "
+            f"(able={able_pool or 'none'}; joint march cannot burn only one court's quota)"
+        )
+        world.last_player_offensive_error = note
+        _append_player_log(world, f"[t={world.tick}] {note}")
+        return world
+    lead_id = _normalize_invest_target(lead) if lead else ""
+    if lead_id not in able_pool:
+        for cand in ("chu", "qi", *able_pool):
+            if cand in able_pool and tid in NEIGHBORS.get(cand, ()):
+                lead_id = cand
+                break
+        if lead_id not in able_pool:
+            lead_id = "chu" if "chu" in able_pool else able_pool[0]
+    allies = [a for a in able_pool if a != lead_id]
+    # Pass able members only — each will consume +1 of its own front in player_offensive
+    return player_offensive(world, lead_id, tid, allies=allies)
 
 
 def resource_pool_safe(ag) -> float:
@@ -965,12 +1090,13 @@ ALLIANCE_SKIM_CAP = 6.0  # max grain or treasury taken per contributor per quoru
 # Skip skim when joint fund already substantial (grain+treasury)
 ALLIANCE_FUND_SKIM_SKIP_TOTAL = 55.0
 
-ALLIANCE_FUND_PURPOSES = ("tech", "agriculture", "construction", "military")
+ALLIANCE_FUND_PURPOSES = ("tech", "agriculture", "construction", "military", "mediation")
 ALLIANCE_FUND_LABELS = {
     "tech": "Tech",
     "agriculture": "Agriculture",
     "construction": "Construction",
     "military": "Military",
+    "mediation": "Mediation",
 }
 # Base spend cost (grain, treasury) — scaled by membership + activity at spend time
 ALLIANCE_FUND_COSTS = {
@@ -978,7 +1104,32 @@ ALLIANCE_FUND_COSTS = {
     "agriculture": (8.0, 3.0),
     "construction": (5.0, 6.0),
     "military": (3.0, 9.0),
+    "mediation": (4.0, 5.0),
 }
+# Mild pairwise trust bump among joint-activity participants
+ALLIANCE_JOINT_TRUST_BUMP = 0.045
+ALLIANCE_MEDIATE_TRUST_BUMP = 0.08
+
+
+def _raise_trust_among(world: WorldState, ids: list[str], amount: float) -> int:
+    """Saturating trust↑ between every ordered pair in ids. Returns edge count touched."""
+    from .nonlinear import saturating_up as _sat_up
+
+    uniq = []
+    seen: set[str] = set()
+    for i in ids:
+        if i and i not in seen and i in world.agents:
+            seen.add(i)
+            uniq.append(i)
+    n = 0
+    for a in uniq:
+        for b in uniq:
+            if a == b:
+                continue
+            key = f"{a}->{b}"
+            world.trust[key] = _sat_up(float(world.trust.get(key, 0.5)), amount)
+            n += 1
+    return n
 
 
 def _alliance_eligible(ag) -> bool:
@@ -1030,11 +1181,11 @@ def alliance_fund_scale(world: WorldState) -> dict[str, float]:
 
 
 def spend_alliance_fund(world: WorldState, purpose: str) -> WorldState:
-    """Spend joint alliance fund on tech / agriculture / construction / military.
+    """Spend joint alliance fund on tech / agriculture / construction / military / mediation.
 
-    Amount and effect scale with alliance membership + activity (cooperate /
-    last quorum contributors). Benefits hit members; active partners get the
-    full share. Demo: each purpose once per quarter.
+    Amount and effect scale with alliance membership + activity. Benefits hit
+    members; active partners get the full share. Mild trust↑ among participants.
+    Demo: each purpose once per quarter.
     """
     world.last_alliance_fund_error = None
     pur = str(purpose or "").strip().lower()
@@ -1049,12 +1200,15 @@ def spend_alliance_fund(world: WorldState, purpose: str) -> WorldState:
         "arms": "military",
         "research": "tech",
         "m2": "tech",
+        "mediate": "mediation",
+        "broker": "mediation",
+        "broker_mediation": "mediation",
     }
     pur = aliases.get(pur, pur)
     if pur not in ALLIANCE_FUND_PURPOSES:
         note = (
             f"Alliance fund spend failed: purpose must be "
-            f"tech|agriculture|construction|military (got {purpose!r})"
+            f"tech|agriculture|construction|military|mediation (got {purpose!r})"
         )
         world.last_alliance_fund_error = note
         world.append_log(note, event_id="alliance_fund", action="error")
@@ -1106,13 +1260,26 @@ def spend_alliance_fund(world: WorldState, purpose: str) -> WorldState:
     spent.append(pur)
     world.alliance_fund_spent_purposes = spent
     label = ALLIANCE_FUND_LABELS[pur]
-    via_base = {"tech": 1.5, "agriculture": 2.5, "construction": 2.0, "military": 2.0}.get(pur, 1.5)
+    via_base = {
+        "tech": 1.5,
+        "agriculture": 2.5,
+        "construction": 2.0,
+        "military": 2.0,
+        "mediation": 1.8,
+    }.get(pur, 1.5)
     via_bump = via_base * effect_mult
     via_touched = 0
     for ag in members:
         share = 1.0 if ag.id in active_ids else 0.45
         ag.viability = min(100.0, float(ag.viability) + via_bump * share)
         via_touched += 1
+    participant_ids = [a.id for a in members]
+    trust_amt = (
+        ALLIANCE_MEDIATE_TRUST_BUMP * effect_mult
+        if pur == "mediation"
+        else ALLIANCE_JOINT_TRUST_BUMP * effect_mult
+    )
+    trust_edges = _raise_trust_among(world, participant_ids, trust_amt)
     if pur == "tech":
         world.world.adoption_meter = min(
             1.0,
@@ -1146,6 +1313,16 @@ def spend_alliance_fund(world: WorldState, purpose: str) -> WorldState:
             f"defense_mod→{world.world.defense_mod:.2f}, cohesion↑, "
             f"via+{via_bump:.1f}×{via_touched}"
         )
+    elif pur == "mediation":
+        world.meso.cohesion = min(100.0, world.meso.cohesion + 3.5 * effect_mult)
+        for ag in members:
+            share = 1.0 if ag.id in active_ids else 0.45
+            ag.state.fear_of_qin = max(0.0, float(ag.state.fear_of_qin) - 0.04 * share)
+            ag.state.resentment = max(0.0, float(ag.state.resentment) - 0.05 * share)
+        effect = (
+            f"cohesion↑, fear/resent cool among members, "
+            f"via+{via_bump:.1f}×{via_touched}"
+        )
     else:  # military
         world.world.military_coalition = min(
             1.0,
@@ -1162,7 +1339,8 @@ def spend_alliance_fund(world: WorldState, purpose: str) -> WorldState:
     note = (
         f"Alliance fund → {label} (−grain {g_cost:.1f}/−treasury {t_cost:.1f}, "
         f"cost×{cost_mult:.2f} effect×{effect_mult:.2f} from "
-        f"{int(scale['n_members'])} members/{int(scale['n_active'])} active): {effect}. "
+        f"{int(scale['n_members'])} members/{int(scale['n_active'])} active): {effect}; "
+        f"trust↑×{trust_edges} (+{trust_amt:.3f}). "
         f"Fund now grain={world.alliance_fund_grain:.1f} treasury={world.alliance_fund_treasury:.1f}"
     )
     if not hasattr(world, "alliance_fund_log") or world.alliance_fund_log is None:

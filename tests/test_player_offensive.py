@@ -174,3 +174,54 @@ def test_invest_and_fund_recover_viability():
     spend_alliance_fund(w3, "agriculture")
     assert w3.last_alliance_fund_error is None
     assert float(w3.agents["chu"].viability) > before
+
+
+def test_alliance_offensive_joint_per_court_fronts_no_counter():
+    from engine.tick import alliance_offensive, player_offensive
+
+    w = new_world()
+    for sid in ("chu", "qi", "zhao", "han", "wei", "yan"):
+        ag = w.agents[sid]
+        ag.grain = 95
+        ag.treasury = 95
+        ag.viability = 95
+        ag.intention.current = "cooperate"
+    t0 = float(w.trust.get("chu->qi", 0.5))
+    alliance_offensive(w, "qin", lead="chu")
+    assert w.last_player_offensive_error is None, w.last_player_offensive_error
+    res = w.last_player_offensive or {}
+    atks = list(res.get("attackers") or [])
+    assert len(atks) >= 2
+    assert "chu" in atks
+    # Each participant burned its OWN front quota (not only Chu)
+    fronts = w.player_offensive_fronts
+    for aid in atks:
+        assert int(fronts.get(aid, 0)) >= 1, (aid, fronts)
+    after = res.get("fronts_after") or {}
+    for aid in atks:
+        assert int(after.get(aid, 0)) >= 1
+    # Joint activity mildly raises trust among participants
+    assert float(w.trust.get("chu->qi", 0.5)) > t0
+    assert int(res.get("joint_trust_edges") or 0) >= 1
+
+    # No Qin counter-alliance: multi-court with Qin lead refused
+    w2 = new_world()
+    w2.agents["qin"].grain = 95
+    w2.agents["qin"].treasury = 95
+    w2.agents["qin"].viability = 95
+    player_offensive(w2, "qin", "chu", allies=["qi"])
+    assert w2.last_player_offensive_error
+    assert "counter" in w2.last_player_offensive_error.lower()
+
+
+def test_alliance_fund_mediation_raises_trust():
+    from engine.tick import spend_alliance_fund
+
+    w = new_world()
+    w.alliance_fund_grain = 80.0
+    w.alliance_fund_treasury = 80.0
+    t0 = float(w.trust.get("chu->qi", 0.5))
+    spend_alliance_fund(w, "mediation")
+    assert w.last_alliance_fund_error is None, w.last_alliance_fund_error
+    assert "mediation" in w.alliance_fund_spent_purposes
+    assert float(w.trust.get("chu->qi", 0.5)) > t0

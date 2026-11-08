@@ -12,16 +12,16 @@ from engine.geo import M4_TABLE, STATE_GEO, state_geo_card
 from engine.packets import conflict_score, packet_public_view, resolve_packet_id
 from engine.patron_client import clique_sync, sync_bonus
 from engine.tech import field_tech_summary, tech_pressure_delta, tech_quorum_ok, tech_structural_damage
-from engine.conflict import ensure_econ_fields, resource_pool
+from engine.conflict import NEIGHBORS, ensure_econ_fields, military_strength, offensive_capacity, resource_pool
 from engine.tick import alliance_fund_scale, alliance_membership
 from engine.tick import attempt_alliance as eng_alliance
 from engine.tick import intervene_many as eng_intervene_many
 from engine.tick import pathway_reading_note
 from engine.tick import player_action as eng_player_action
+from engine.tick import alliance_offensive as eng_alliance_offensive
 from engine.tick import player_offensive as eng_player_offensive
 from engine.tick import spend_alliance_fund as eng_spend_fund
 from engine.tick import tick as eng_tick
-from engine.conflict import NEIGHBORS, offensive_capacity
 from engine.counsel import counsel_log_texts, run_counsel_round as eng_counsel, suggest_prompt_chips
 from engine.trust import chu_clique_strength, get_trust
 from engine.world import WorldState, new_world
@@ -104,6 +104,9 @@ def _project(world: WorldState) -> dict[str, Any]:
             "resources": float(resource_pool(ag)),
             "geographic_yield": float(getattr(ag, "geographic_yield", 0.6)),
             "military": float((getattr(world, "tech", None) and getattr(world.tech, "military", {}) or {}).get(aid, 0.0) or 0.0),
+            # Field force = conflict military_strength (not mil×man alone — that
+            # wrongly ranked Chu thin despite vault high areal pop + riverine levy).
+            "force": float(military_strength(world, aid)),
             "tech_adopt": float((getattr(world, "tech", None) and getattr(world.tech, "adoption_mean", {}) or {}).get(aid, 0.0) or 0.0),
             "annexed": bool(getattr(ag, "annexed", False)),
             "annexed_by": getattr(ag, "annexed_by", None),
@@ -262,7 +265,7 @@ def _project(world: WorldState) -> dict[str, Any]:
         # remaining purpose slots this tick (compat / purse count)
         "alliance_fund_actions_left": max(
             0,
-            4 - len(getattr(world, "alliance_fund_spent_purposes", None) or []),
+            5 - len(getattr(world, "alliance_fund_spent_purposes", None) or []),
         ),
         "counsel_log": counsel_log_texts(
             world,
@@ -434,6 +437,20 @@ def do_player_offensive(
     world = _world_from_ui(raw)
     before = len(world.episode)
     eng_player_offensive(world, attacker, target, allies=allies, bloc=bloc)
+    err = getattr(world, "last_player_offensive_error", None)
+    return _project(world), _chat_from_new_logs(world, before), err
+
+
+def do_alliance_offensive(
+    raw: dict[str, Any] | None,
+    target: str,
+    *,
+    lead: str | None = None,
+) -> tuple[dict[str, Any], list[dict[str, str]], str | None]:
+    """Joint anti-Qin alliance offensive — members vs target; no counter-alliances."""
+    world = _world_from_ui(raw)
+    before = len(world.episode)
+    eng_alliance_offensive(world, target, lead=lead)
     err = getattr(world, "last_player_offensive_error", None)
     return _project(world), _chat_from_new_logs(world, before), err
 

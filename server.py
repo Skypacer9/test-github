@@ -27,6 +27,7 @@ from backend import (
     bootstrap_dialogue,
     character_choices,
     character_profile,
+    do_alliance_offensive,
     do_player_action,
     do_player_offensive,
     export_snapshot,
@@ -770,7 +771,7 @@ def api_alliance():
 
 @app.post("/api/alliance_fund")
 def api_alliance_fund():
-    """Spend joint alliance fund: tech | agriculture | construction | military."""
+    """Spend joint alliance fund: tech | agriculture | construction | military | mediation."""
     blocked = _mutate_guard()
     if blocked:
         return blocked
@@ -778,11 +779,14 @@ def api_alliance_fund():
     body = request.get_json(silent=True) or {}
     purpose = str(body.get("purpose") or body.get("action") or "").strip().lower()
     allowed = {
-        "tech", "agriculture", "construction", "military",
+        "tech", "agriculture", "construction", "military", "mediation",
         "agri", "farm", "build", "mil", "army", "research", "m2", "infra", "arms",
+        "mediate", "broker", "broker_mediation",
     }
     if purpose not in allowed:
-        return jsonify({"ok": False, "error": "purpose must be tech|agriculture|construction|military"}), 400
+        return jsonify(
+            {"ok": False, "error": "purpose must be tech|agriculture|construction|military|mediation"}
+        ), 400
     before_g = float(st.get("alliance_fund_grain") or 0.0)
     before_t = float(st.get("alliance_fund_treasury") or 0.0)
     projected, msgs, err = spend_alliance_fund(st, purpose)
@@ -823,14 +827,17 @@ def api_player_action():
     action = str(body.get("action") or "").strip().lower()
     target = str(body.get("target") or "chu").strip().lower()
     allowed = {
-        "tech", "agriculture", "construction", "military",
+        "tech", "agriculture", "construction", "military", "mediation",
         "fund_military", "send_grain", "broker_mediation",
-        "fund", "grain", "agri", "farm", "mediate", "mediation", "broker",
+        "fund", "grain", "agri", "farm", "mediate", "broker",
         "mil", "army", "arms", "send", "build", "infra", "research", "m2",
     }
     if action not in allowed:
         return jsonify(
-            {"ok": False, "error": "action must be tech|agriculture|construction|military"}
+            {
+                "ok": False,
+                "error": "action must be tech|agriculture|construction|military|mediation",
+            }
         ), 400
     return _invest_response(action, target)
 
@@ -841,6 +848,7 @@ def api_offensive():
 
     Soft cap 3/quarter. Joint force shares attrition ∝ contribution; target full hit.
     Memory spikes: target > attackers > nearby.
+    No counter-alliances: multi-court marches are anti-Qin alliance only.
     """
     blocked = _mutate_guard()
     if blocked:
@@ -859,6 +867,36 @@ def api_offensive():
     projected, msgs, err = do_player_offensive(
         st, attacker, target, allies=allies, bloc=bloc
     )
+    pack = _pack(projected, msgs)
+    pack["offensive"] = projected.get("last_player_offensive")
+    pack["player_offensive_actions_left"] = int(
+        projected.get("player_offensive_actions_left") or 0
+    )
+    pack["offensive_capacity"] = projected.get("offensive_capacity") or {}
+    if err:
+        pack["ok"] = False
+        pack["error"] = err
+        return jsonify(pack), 400
+    return jsonify(pack)
+
+
+@app.post("/api/alliance_offensive")
+def api_alliance_offensive():
+    """Joint anti-Qin alliance offensive — body: {target, lead?}.
+
+    Members (prefer active) march together; shared attrition + memory spikes.
+    No counter-alliances vs Chu/Qi hegemony.
+    """
+    blocked = _mutate_guard()
+    if blocked:
+        return blocked
+    st = _ensure()
+    body = request.get_json(silent=True) or {}
+    target = str(body.get("target") or body.get("to") or body.get("defender") or "").strip().lower()
+    lead = str(body.get("lead") or body.get("attacker") or "").strip().lower() or None
+    if not target:
+        return jsonify({"ok": False, "error": "target required"}), 400
+    projected, msgs, err = do_alliance_offensive(st, target, lead=lead)
     pack = _pack(projected, msgs)
     pack["offensive"] = projected.get("last_player_offensive")
     pack["player_offensive_actions_left"] = int(

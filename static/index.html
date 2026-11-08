@@ -1045,7 +1045,10 @@
     }
     #pane-dialogue h2, #pane-profile h2 { display: none; }
 
-    /* Left quarterly */
+    /* Left quarterly — Advance pinned; log/invest scroll in .q-scroll */
+    #panel-quarterly {
+      overflow: hidden;
+    }
     #panel-quarterly .dialogue-box {
       flex: 0 0 auto;
       margin: 0 0 0.3rem;
@@ -1053,24 +1056,22 @@
     }
     #panel-quarterly .dialogue-box .speaker { font-size: 0.65rem; margin-bottom: 0.1rem; }
     #panel-quarterly .dialogue-box .line { font-size: 0.82rem; line-height: 1.3; }
-    #panel-quarterly .log {
-      flex: 1 1 0;
-      min-height: 3rem;
-      max-height: 14vh;
-      overflow: auto;
-      margin: 0 0 0.25rem;
-      font-size: 0.72rem;
-      line-height: 1.3;
-      padding: 0.3rem 0.4rem;
-    }
     #panel-quarterly .actions {
       flex: 0 0 auto;
       gap: 0.3rem;
-      margin: 0;
+      margin: 0 0 0.2rem;
+      padding: 0.35rem 0.4rem;
+      border: 1px solid rgba(196,163,90,0.4);
+      background: rgba(26, 18, 12, 0.95);
+      z-index: 3;
     }
     #panel-quarterly .actions .cmd {
-      padding: 0.28rem 0.55rem;
-      font-size: 0.68rem;
+      padding: 0.32rem 0.6rem;
+      font-size: 0.7rem;
+    }
+    #panel-quarterly .actions .cmd.primary {
+      font-weight: 700;
+      letter-spacing: 0.03em;
     }
     #panel-quarterly .intervene-row,
     #panel-quarterly .save-row {
@@ -1079,9 +1080,27 @@
     }
     #panel-quarterly .status {
       flex: 0 0 auto;
-      margin: 0.2rem 0;
+      margin: 0 0 0.2rem;
       font-size: 0.68rem;
       min-height: 1em;
+    }
+    #panel-quarterly .q-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding-right: 0.15rem;
+    }
+    #panel-quarterly .log {
+      flex: none;
+      min-height: 2.5rem;
+      max-height: 9vh;
+      overflow: auto;
+      margin: 0 0 0.35rem;
+      font-size: 0.72rem;
+      line-height: 1.3;
+      padding: 0.3rem 0.4rem;
     }
     #panel-quarterly .player-invest {
       flex: 0 0 auto;
@@ -1090,11 +1109,8 @@
       border-top: 1px solid rgba(166,124,82,0.25);
       gap: 0.25rem;
       font-size: 0.65rem;
-      /* Keep Fund Military / Intervene spend in the first screen */
-      position: sticky;
-      bottom: 0;
-      background: linear-gradient(180deg, rgba(26,21,18,0.92), rgba(26,21,18,0.98));
-      z-index: 2;
+      position: static;
+      background: transparent;
     }
     #panel-quarterly .player-purse { font-size: 0.62rem; margin: 0.05rem 0; }
     #panel-quarterly .player-invest .cmd {
@@ -1104,10 +1120,6 @@
     #panel-quarterly .player-invest select {
       font-size: 0.65rem;
       padding: 0.15rem 0.25rem;
-    }
-    #panel-quarterly {
-      overflow-y: auto;
-      overflow-x: hidden;
     }
     #panel-quarterly .player-log-wrap {
       display: block;
@@ -1334,13 +1346,10 @@
           <div class="speaker" id="dlg-speaker">Chronicler</div>
           <div class="line" id="dlg-line">Connecting to the field…</div>
         </div>
-        <div class="log" id="log" aria-live="polite"></div>
-
-        <div class="actions">
+        <div class="actions" id="quarter-actions">
           <button class="cmd primary" id="btn-advance" type="button">Advance Quarter</button>
           <button class="cmd" id="btn-alliance" type="button">Attempt Alliance</button>
           <button class="cmd danger" id="btn-new" type="button">New Run</button>
-
           <div class="intervene-row">
             <span class="label">Intervene</span>
             <label class="chk"><input type="checkbox" id="t-qin" value="qin" /> Qin</label>
@@ -1350,66 +1359,75 @@
           </div>
           <div class="save-row">
             <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase">Campaign</span>
-            <button class="cmd" id="btn-save" type="button">Save</button>
-            <button class="cmd" id="btn-load" type="button">Load</button>
-            <input id="load-file" type="file" accept="application/json,.json" />
+            <button class="cmd" id="btn-save" type="button" title="Save to browser localStorage + server">Save</button>
+            <button class="cmd" id="btn-load" type="button" title="Load from browser or server slots">Load</button>
+            <button class="cmd" id="btn-export" type="button" title="Download JSON snapshot">Export</button>
+            <input id="load-file" type="file" accept="application/json,.json" hidden />
           </div>
         </div>
         <div class="status" id="status"></div>
-        <div class="player-invest">
-          <div class="player-purse">Player purse — Political Capital <b id="pc-val">100</b> · Treasury <b id="pt-val">100</b></div>
-          <div class="player-purse">Alliance joint fund — Grain <b id="af-g">0</b> · Treasury <b id="af-t">0</b></div>
-          <div class="player-purse">Actions this quarter — Invest <b id="invest-left">1</b>/1 · Alliance <b id="alliance-left">1</b>/1 · Intervene <b id="intervene-left">1</b>/1 · Offensive <b id="offensive-left">3</b>/3 · Fund purposes <b id="af-left">4</b>/4</div>
-          <div class="offensive-box" id="offensive-box">
-            <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%">Offensive — who attacks whom</span>
-            <select id="off-attacker" aria-label="Lead attacker"></select>
-            <select id="off-target" aria-label="Target state"></select>
-            <button class="cmd danger" id="btn-offensive" type="button">Launch Offensive</button>
-            <div class="off-allies" id="off-allies" style="width:100%;display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;margin-top:0.2rem">
-              <span class="label" style="font-size:0.62rem;letter-spacing:0.08em;color:var(--ws-paper-dim);text-transform:uppercase">Allies join</span>
+        <div class="q-scroll" id="q-scroll">
+          <div class="log" id="log" aria-live="polite"></div>
+          <div class="player-invest">
+            <div class="player-purse">Player purse — Political Capital <b id="pc-val">100</b> · Treasury <b id="pt-val">100</b></div>
+            <div class="player-purse">Alliance joint fund — Grain <b id="af-g">0</b> · Treasury <b id="af-t">0</b></div>
+            <div class="player-purse">Actions this quarter — Invest <b id="invest-left">1</b>/1 · Alliance <b id="alliance-left">1</b>/1 · Intervene <b id="intervene-left">1</b>/1 · Offensive <b id="offensive-left">3</b>/3 · Fund purposes <b id="af-left">5</b>/5</div>
+            <div class="offensive-box" id="offensive-box">
+              <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%">Offensive — who attacks whom</span>
+              <select id="off-attacker" aria-label="Lead attacker"></select>
+              <select id="off-target" aria-label="Target state"></select>
+              <button class="cmd danger" id="btn-offensive" type="button">Launch Offensive</button>
+              <div class="off-allies" id="off-allies" style="width:100%;display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;margin-top:0.2rem">
+                <span class="label" style="font-size:0.62rem;letter-spacing:0.08em;color:var(--ws-paper-dim);text-transform:uppercase">Allies join</span>
+              </div>
+              <div class="player-purse" id="off-capacity-line" style="width:100%">Pick lead attacker — residual front capacity + ally checkboxes appear here.</div>
             </div>
-            <div class="player-purse" id="off-capacity-line" style="width:100%">Pick lead attacker — residual front capacity + ally checkboxes appear here.</div>
-          </div>
-          <div class="court-action-box" id="invest-box">
-            <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%">Invest — actor → recipient</span>
-            <span class="role-chip" id="invest-actor-chip">Actor · Player purse</span>
-            <select id="invest-target" aria-label="Recipient court">
-              <option value="chu">Chu</option>
-              <option value="qi">Qi</option>
-              <option value="zhao">Zhao</option>
-              <option value="han">Han</option>
-              <option value="wei">Wei</option>
-              <option value="yan">Yan</option>
-            </select>
-            <button class="cmd" id="btn-inv-tech" type="button">Tech</button>
-            <button class="cmd" id="btn-inv-agri" type="button">Agriculture</button>
-            <button class="cmd" id="btn-inv-build" type="button">Construction</button>
-            <button class="cmd" id="btn-inv-mil" type="button">Military</button>
-            <div class="player-purse" id="invest-hint" style="width:100%">Recipient gets the chosen stipend (same four purposes as Alliance fund).</div>
-          </div>
-          <div class="court-action-box" id="alliance-fund-box">
-            <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%">Alliance fund — partners · scaled spend</span>
-            <div class="off-allies" id="alliance-partners" style="width:100%;display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center">
-              <span class="label" style="font-size:0.62rem;letter-spacing:0.08em;color:var(--ws-paper-dim);text-transform:uppercase">Partners</span>
+            <div class="court-action-box" id="invest-box">
+              <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%">Invest — actor → recipient</span>
+              <span class="role-chip" id="invest-actor-chip">Actor · Player purse</span>
+              <select id="invest-target" aria-label="Recipient court">
+                <option value="chu">Chu</option>
+                <option value="qi">Qi</option>
+                <option value="zhao">Zhao</option>
+                <option value="han">Han</option>
+                <option value="wei">Wei</option>
+                <option value="yan">Yan</option>
+              </select>
+              <button class="cmd" id="btn-inv-tech" type="button">Tech</button>
+              <button class="cmd" id="btn-inv-agri" type="button">Agriculture</button>
+              <button class="cmd" id="btn-inv-build" type="button">Construction</button>
+              <button class="cmd" id="btn-inv-mil" type="button">Military</button>
+              <button class="cmd" id="btn-inv-mediate" type="button">Mediation</button>
+              <div class="player-purse" id="invest-hint" style="width:100%">Recipient gets the chosen stipend (same purposes as Alliance fund, incl. Mediation).</div>
             </div>
-            <button class="cmd" id="btn-af-tech" type="button">Tech</button>
-            <button class="cmd" id="btn-af-agri" type="button">Agriculture</button>
-            <button class="cmd" id="btn-af-build" type="button">Construction</button>
-            <button class="cmd" id="btn-af-mil" type="button">Military</button>
-            <div class="player-purse" id="alliance-fund-hint" style="width:100%">Spend amount/effect scales with membership + activity (not flat).</div>
+            <div class="court-action-box" id="alliance-fund-box">
+              <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%">Alliance — partners · joint offensive · fund</span>
+              <div class="off-allies" id="alliance-partners" style="width:100%;display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center">
+                <span class="label" style="font-size:0.62rem;letter-spacing:0.08em;color:var(--ws-paper-dim);text-transform:uppercase">Partners</span>
+              </div>
+              <span class="role-chip">Joint offensive · members → target</span>
+              <select id="alliance-off-target" aria-label="Alliance offensive target"></select>
+              <button class="cmd danger" id="btn-alliance-offensive" type="button">Launch Alliance Offensive</button>
+              <button class="cmd" id="btn-af-tech" type="button">Tech</button>
+              <button class="cmd" id="btn-af-agri" type="button">Agriculture</button>
+              <button class="cmd" id="btn-af-build" type="button">Construction</button>
+              <button class="cmd" id="btn-af-mil" type="button">Military</button>
+              <button class="cmd" id="btn-af-mediate" type="button">Mediation</button>
+              <div class="player-purse" id="alliance-fund-hint" style="width:100%">Joint fund/offensive/mediate mildly raise trust among participants. No counter-alliances.</div>
+            </div>
           </div>
-        </div>
-        <div class="player-log-wrap">
-          <label for="player-log">Player Log · Shadow Actions</label>
-          <textarea id="player-log" readonly placeholder="Consequence lines and shadow attacks appear here…"></textarea>
-        </div>
-        <details class="more-logs">
-          <summary>Cultural chronicle</summary>
-          <div class="counsel-box" id="chronicle-box">
-            <div class="clabel">Cultural chronicle <span class="mode-badge" id="chronicle-mode">stub</span></div>
-            <textarea id="chronicle-log" readonly placeholder="Wry seasonal readings — one gloss among several, not destiny…"></textarea>
+          <div class="player-log-wrap">
+            <label for="player-log">Player Log · Shadow Actions</label>
+            <textarea id="player-log" readonly placeholder="Consequence lines and shadow attacks appear here…"></textarea>
           </div>
-        </details>
+          <details class="more-logs">
+            <summary>Cultural chronicle</summary>
+            <div class="counsel-box" id="chronicle-box">
+              <div class="clabel">Cultural chronicle <span class="mode-badge" id="chronicle-mode">stub</span></div>
+              <textarea id="chronicle-log" readonly placeholder="Wry seasonal readings — one gloss among several, not destiny…"></textarea>
+            </div>
+          </details>
+        </div>
       </section>
 
       <section class="panel" id="panel-dialogue">
@@ -1491,10 +1509,14 @@
   <div class="slot-panel" id="slot-panel" aria-hidden="true">
     <div class="slot-card" role="dialog" aria-labelledby="slot-title">
       <h3 id="slot-title">Load campaign</h3>
+      <p class="talk-hint" style="margin:0 0 0.55rem;font-size:0.72rem">Browser localStorage first — no file picker needed. Server slots merge when available.</p>
+      <div class="slot-actions" style="margin-bottom:0.55rem">
+        <button class="cmd primary" id="btn-restore-session" type="button">Restore last session</button>
+        <button class="cmd" id="btn-load-file" type="button">Import file…</button>
+      </div>
       <ul class="slot-list" id="slot-list"></ul>
-      <div class="slot-empty" id="slot-empty" hidden>No saved slots yet.</div>
+      <div class="slot-empty" id="slot-empty" hidden>No named slots yet — use Save, or Restore last session.</div>
       <div class="slot-actions">
-        <button class="cmd" id="btn-load-file" type="button">File…</button>
         <button class="cmd" id="btn-slot-close" type="button">Close</button>
       </div>
     </div>
@@ -1686,19 +1708,28 @@
       if (box) box.hidden = true;
     }
 
-    function forceWeight(mil, manpower) {
-      const m = Number(mil);
-      const p = Number(manpower);
-      if (!Number.isFinite(m) || !Number.isFinite(p)) return NaN;
-      return Math.max(0, Math.min(1, m * p));
+    function forceWeight(ag, eco, court) {
+      // Prefer projected conflict force (military_strength). Vault: Chu is wide
+      // areal pop + chu_riverine levy_geo 4 / bronze_craft 5, iron_weapons 3 —
+      // mid fieldable manpower (weaker uniform levy), NOT a thin spear court.
+      // Do not use mil×man alone (that ranked Han niche iron above Chu depth).
+      if (ag && Number.isFinite(Number(ag.force))) return Number(ag.force);
+      const m = Number(ag && ag.military);
+      const p = Number((eco && eco.manpower != null) ? eco.manpower : (court && court.available_manpower));
+      const pop = Number(court && court.population);
+      if (!Number.isFinite(m) && !Number.isFinite(p)) return NaN;
+      const mil = Number.isFinite(m) ? m : 0.2;
+      const man = Number.isFinite(p) ? p : 0.4;
+      const head = Number.isFinite(pop) ? pop : 0.5;
+      return Math.max(0.05, 0.40 * mil + 0.35 * man + 0.25 * head);
     }
 
     const COURT_GROUNDING = {
       qin: "里耶秦简 + 睡虎地秦简 — household/上计 machine; grain-forward extract (ordinal ranks, not census).",
-      chu: "包山楚简 — patronage / lineage adjudication; wide pop, weaker uniform levy.",
+      chu: "包山楚简 — patronage/lineage adjudication; highest areal pop (Ying seed ~16 km²); chu_riverine levy_geo 4; bronze_craft 5 / iron_weapons 3 — mid fieldable manpower (weaker uniform levy), not a low-force court.",
       qi: "临淄 mint + 《管子》轻重 — commerce / monetization ideal; wealth levy, not Shang Yang mass fa.",
       zhao: "Thin scaffold — Sanjin workshop/coin gloss only; no polity census dump.",
-      han: "Thin scaffold — 新郑 workshop gloss; smallest pop ordinal among seven.",
+      han: "Thin scaffold — 新郑 workshop gloss; smallest pop ordinal among seven; iron_weapons niche (force ≠ polity depth).",
       wei: "Thin scaffold — Sanjin craft / coin intensity; mid extract ordinal.",
       yan: "Thin scaffold — 燕下都明刀 coin intensity; mid-low levy/urban.",
     };
@@ -1728,9 +1759,7 @@
         } else if (keyPath === "production_power" || keyPath === "manpower" || keyPath === "levy_extract") {
           v = Number((ecos[fid] || {})[keyPath]);
         } else if (keyPath === "force") {
-          const mil = Number(((m2.military || {})[fid] != null ? m2.military[fid] : (agents[fid] || {}).military));
-          const man = Number((ecos[fid] || {}).manpower != null ? ecos[fid].manpower : (courts[fid] || {}).available_manpower);
-          v = forceWeight(mil, man);
+          v = forceWeight(agents[fid] || {}, ecos[fid] || {}, courts[fid] || {});
         } else if (keyPath === "mil_tech") {
           v = Number((m2.military || {})[fid] != null ? m2.military[fid] : (agents[fid] || {}).military);
         } else if (keyPath === "tech_adopt") {
@@ -1899,6 +1928,7 @@
     function refreshAlliancePartners(agents, membership) {
       const box = $("alliance-partners");
       const hint = $("alliance-fund-hint");
+      const tgtSel = $("alliance-off-target");
       if (!box) return;
       const ags = agents || {};
       const mem = membership || {};
@@ -1906,6 +1936,7 @@
         const ag = ags[id] || {};
         return !(ag.annexed || Number(ag.viability) <= 0);
       });
+      const memberSet = new Set(memberIds);
       const active = new Set(Array.isArray(mem.active_ids) ? mem.active_ids : []);
       box.innerHTML =
         `<span class="label" style="font-size:0.62rem;letter-spacing:0.08em;color:var(--ws-paper-dim);text-transform:uppercase">Partners</span>` +
@@ -1916,16 +1947,38 @@
               return `<label class="chk" style="font-size:0.68rem"><input type="checkbox" value="${esc(id)}"${on ? " checked" : ""} disabled /> ${esc(name)}${on ? " · active" : " · idle"}</label>`;
             }).join("")
           : `<span style="font-size:0.65rem;color:var(--ws-paper-dim)">No living members</span>`);
+      if (tgtSel) {
+        const prev = tgtSel.value;
+        const outs = FIELD_IDS.filter((id) => {
+          if (memberSet.has(id)) return false;
+          const ag = ags[id] || {};
+          return !(ag.annexed || Number(ag.viability) <= 0);
+        });
+        tgtSel.innerHTML = outs.map((id) => {
+          const name = (ags[id] && ags[id].name) || STATE_LABEL[id] || id;
+          return `<option value="${esc(id)}">${esc(name)}</option>`;
+        }).join("") || `<option value="">No outward target</option>`;
+        if (prev && tgtSel.querySelector(`option[value="${prev}"]`)) tgtSel.value = prev;
+        else if (outs.indexOf("qin") >= 0) tgtSel.value = "qin";
+        else if (outs[0]) tgtSel.value = outs[0];
+      }
       if (hint) {
         const nM = Number(mem.n_members);
         const nA = Number(mem.n_active);
         const cM = Number(mem.cost_mult);
         const eM = Number(mem.effect_mult);
+        const tgt = (tgtSel && tgtSel.value) || "—";
         hint.textContent =
           `Members ${Number.isFinite(nM) ? nM : "—"} · active ${Number.isFinite(nA) ? nA : "—"}` +
           (Number.isFinite(cM) && Number.isFinite(eM)
-            ? ` · spend ×${cM.toFixed(2)} / effect ×${eM.toFixed(2)}`
-            : " · spend scales with membership + activity");
+            ? ` · fund ×${cM.toFixed(2)}/×${eM.toFixed(2)}`
+            : "") +
+          ` · Alliance Offensive → ${STATE_LABEL[tgt] || tgt} (no counter-alliances)`;
+      }
+      const btnAO = $("btn-alliance-offensive");
+      if (btnAO) {
+        const launches = Number(lastBudget.offensive);
+        btnAO.disabled = busy || launches <= 0 || !memberIds.length || !(tgtSel && tgtSel.value);
       }
     }
 
@@ -1975,14 +2028,18 @@
 
         if (alliesBox) {
           const tid = tgtSel.value;
-          const peers = living.filter((id) => {
-            if (id === aid || id === tid) return false;
-            const bloc = String((ags[id] && ags[id].bloc) || "");
-            return leadBloc && bloc === leadBloc;
-          });
+          // Joint allies only for anti-Qin lead — no Qin counter-alliance checkboxes
+          const peers = (leadBloc === "anti_qin")
+            ? living.filter((id) => {
+                if (id === aid || id === tid) return false;
+                return String((ags[id] && ags[id].bloc) || "") === "anti_qin";
+              })
+            : [];
           alliesBox.innerHTML =
             `<span class="label" style="font-size:0.62rem;letter-spacing:0.08em;color:var(--ws-paper-dim);text-transform:uppercase">Allies join</span>` +
-            (peers.length
+            (leadBloc !== "anti_qin"
+              ? `<span style="font-size:0.65rem;color:var(--ws-paper-dim)">Qin fights alone — no counter-alliances</span>`
+              : peers.length
               ? peers.map((id) => {
                   const name = (ags[id] && ags[id].name) || STATE_LABEL[id] || id;
                   const cap = (caps && caps[id]) || {};
@@ -2460,14 +2517,14 @@ function renderProfile(prof) {
         const a = (((lastFieldState || {}).agents || {})[fid]) || (fid === id ? ag : {});
         popMap[fid] = Number(c.population);
         manMap[fid] = Number(e.manpower != null ? e.manpower : c.available_manpower);
-        forceMap[fid] = forceWeight(a.military, manMap[fid]);
+        forceMap[fid] = forceWeight(a, e, c);
       });
       // Prefer live args for this card
       if (demo) {
         popMap[id] = Number(demo.population);
         manMap[id] = Number((eco && eco.manpower != null) ? eco.manpower : demo.available_manpower);
       }
-      forceMap[id] = forceWeight(ag.military, manMap[id]);
+      forceMap[id] = forceWeight(ag, eco || {}, demo || {});
 
       const popPlace = relativePlace(popMap, id);
       const manPlace = relativePlace(manMap, id);
@@ -2712,7 +2769,7 @@ function renderProfile(prof) {
       const spent = Array.isArray(s.alliance_fund_spent_purposes)
         ? s.alliance_fund_spent_purposes
         : (Array.isArray(data.alliance_fund_spent_purposes) ? data.alliance_fund_spent_purposes : []);
-      const afLeft = Math.max(0, 4 - spent.length);
+      const afLeft = Math.max(0, 5 - spent.length);
       setText("invest-left", Number.isFinite(invLeft) ? Math.max(0, Math.round(invLeft)) : "—");
       setText("alliance-left", Number.isFinite(allLeft) ? Math.max(0, Math.round(allLeft)) : "—");
       setText("intervene-left", Number.isFinite(intLeft) ? Math.max(0, Math.round(intLeft)) : "—");
@@ -2811,7 +2868,7 @@ function renderProfile(prof) {
       const allianceGone = Number(lastBudget.allianceAttempt) <= 0;
       const interveneGone = Number(lastBudget.intervene) <= 0;
       const spent = lastBudget.allianceFundSpent || [];
-      ["btn-inv-tech", "btn-inv-agri", "btn-inv-build", "btn-inv-mil"].forEach((id) => {
+      ["btn-inv-tech", "btn-inv-agri", "btn-inv-build", "btn-inv-mil", "btn-inv-mediate"].forEach((id) => {
         const el = $(id);
         if (el) el.disabled = busy || investGone;
       });
@@ -2825,6 +2882,7 @@ function renderProfile(prof) {
         agriculture: "btn-af-agri",
         construction: "btn-af-build",
         military: "btn-af-mil",
+        mediation: "btn-af-mediate",
       };
       Object.keys(purposeBtn).forEach((pur) => {
         const el = $(purposeBtn[pur]);
@@ -2834,7 +2892,7 @@ function renderProfile(prof) {
 
     function setBusy(on) {
       busy = on;
-      ["btn-advance", "btn-new", "btn-save", "btn-load"].forEach((id) => {
+      ["btn-advance", "btn-new", "btn-save", "btn-load", "btn-export"].forEach((id) => {
         const el = $(id);
         if (el) el.disabled = on;
       });
@@ -2861,7 +2919,11 @@ function renderProfile(prof) {
     }
 
     function isSnap(obj) {
-      return obj && typeof obj === "object" && (obj.engine || obj.agents);
+      if (!obj || typeof obj !== "object") return false;
+      if (obj.engine && typeof obj.engine === "object") return true;
+      if (obj.agents && typeof obj.agents === "object") return true;
+      if (obj.format === "warring-states-abm" && obj.tick != null) return true;
+      return false;
     }
 
     function readSlotsMap() {
@@ -3224,6 +3286,7 @@ function renderProfile(prof) {
     $("btn-inv-agri").onclick = investPurpose("agriculture", "Invest→Agriculture");
     $("btn-inv-build").onclick = investPurpose("construction", "Invest→Construction");
     $("btn-inv-mil").onclick = investPurpose("military", "Invest→Military");
+    $("btn-inv-mediate").onclick = investPurpose("mediation", "Invest→Mediation");
     $("btn-offensive").onclick = () => run("Offensive", () => {
       const attacker = ($("off-attacker") && $("off-attacker").value) || "";
       const target = ($("off-target") && $("off-target").value) || "";
@@ -3233,6 +3296,13 @@ function renderProfile(prof) {
       return api("/api/offensive", {
         method: "POST",
         body: JSON.stringify({ attacker, target, allies }),
+      });
+    });
+    $("btn-alliance-offensive").onclick = () => run("Alliance Offensive", () => {
+      const target = ($("alliance-off-target") && $("alliance-off-target").value) || "";
+      return api("/api/alliance_offensive", {
+        method: "POST",
+        body: JSON.stringify({ target }),
       });
     });
     async function spendAllianceFund(purpose, label) {
@@ -3265,39 +3335,43 @@ function renderProfile(prof) {
     $("btn-af-agri").onclick = () => spendAllianceFund("agriculture", "Fund→Agriculture");
     $("btn-af-build").onclick = () => spendAllianceFund("construction", "Fund→Construction");
     $("btn-af-mil").onclick = () => spendAllianceFund("military", "Fund→Military");
+    $("btn-af-mediate").onclick = () => spendAllianceFund("mediation", "Fund→Mediation");
 
     $("btn-save").onclick = () => {
-      // Peek tick for default name without mutating busy state yet
+      // One-click: browser localStorage + /api/save — no prompt, no forced download
       const tickEl = $("tick");
       const tickHint = tickEl ? tickEl.textContent : "?";
-      const suggested = defaultSlotName(tickHint);
+      const name = defaultSlotName(tickHint);
       const existing = Object.keys(readSlotsMap());
-      const hint = existing.length
-        ? ("\nExisting slots (same name overwrites that slot only):\n- " + existing.slice(0, 8).join("\n- "))
-        : "";
-      const name = window.prompt("Save slot name:" + hint, suggested);
-      if (name == null) return;
-      const trimmed = String(name).trim();
-      if (!trimmed) {
-        $("status").textContent = "Save cancelled — name required";
-        $("status").classList.add("err");
-        return;
-      }
       run("Save", async () => {
         const data = await api("/api/save", {
           method: "POST",
-          body: JSON.stringify({ name: trimmed }),
+          body: JSON.stringify({ name }),
         });
-        if (data.snapshot) {
-          putLocalSlot(trimmed, data.snapshot);
-          writeSessionSave(data.snapshot);
-          downloadSnapshot(data.snapshot, trimmed);
-          const overwritten = existing.indexOf(trimmed) >= 0;
-          showToast(
-            (overwritten ? "Overwrote" : "Saved") +
-              " “" + trimmed + "” · t" + (data.tick ?? "?")
-          );
-        }
+        if (!data.snapshot) throw new Error("Save returned no snapshot");
+        putLocalSlot(name, data.snapshot);
+        writeSessionSave(data.snapshot);
+        const overwritten = existing.indexOf(name) >= 0;
+        showToast(
+          (overwritten ? "Overwrote" : "Saved") +
+            " “" + name + "” in browser + server · t" + (data.tick ?? "?")
+        );
+        $("status").textContent = "Saved “" + name + "” (localStorage + /api/save)";
+        $("status").classList.remove("err");
+        return api("/api/state");
+      }, { skipAutosave: true });
+    };
+
+    $("btn-export").onclick = () => {
+      run("Export", async () => {
+        const data = await api("/api/save", { method: "POST", body: "{}" });
+        if (!data.snapshot) throw new Error("Export returned no snapshot");
+        writeSessionSave(data.snapshot);
+        const tickEl = $("tick");
+        const name = defaultSlotName(tickEl ? tickEl.textContent : data.tick);
+        putLocalSlot(name + "-export", data.snapshot);
+        downloadSnapshot(data.snapshot, name);
+        showToast("Exported download + kept local copy · t" + (data.tick ?? "?"));
         return api("/api/state");
       }, { skipAutosave: true });
     };
@@ -3307,8 +3381,26 @@ function renderProfile(prof) {
     $("slot-panel").addEventListener("click", (ev) => {
       if (ev.target === $("slot-panel")) closeSlotPanel();
     });
-    $("btn-load-file").onclick = () => {
+    $("btn-restore-session").onclick = () => {
+      const session = readSessionSave();
+      if (!session) {
+        showToast("No last session in this browser");
+        $("status").textContent = "No local session — Save first, or pick a named slot";
+        $("status").classList.add("err");
+        return;
+      }
       closeSlotPanel();
+      run("Restore session", async () => {
+        const data = await api("/api/load", {
+          method: "POST",
+          body: JSON.stringify(session),
+        });
+        writeSessionSave(session);
+        showToast("Restored last session · t" + ((data.state && data.state.tick) ?? session.tick ?? "?"));
+        return data;
+      }, { skipAutosave: true });
+    };
+    $("btn-load-file").onclick = () => {
       $("load-file").click();
     };
     $("load-file").onchange = () => {
