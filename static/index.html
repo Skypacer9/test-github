@@ -2298,7 +2298,7 @@ function renderProfile(prof) {
     }
 
     async function run(label, fn, opts) {
-      if (busy) return;
+      if (busy) return null;
       const options = opts || {};
       setBusy(true);
       try {
@@ -2311,9 +2311,11 @@ function renderProfile(prof) {
         if (profileLoadedOnce || $("pane-profile").classList.contains("active")) {
           loadProfile(selectedFigure);
         }
+        return data;
       } catch (e) {
         $("status").textContent = String(e.message || e);
         $("status").classList.add("err");
+        return null;
       } finally {
         setBusy(false);
       }
@@ -2506,23 +2508,29 @@ function renderProfile(prof) {
     };
 
     async function boot() {
+      // Always GET /api/state first: paints the field AND mints CSRF for later POSTs.
+      // A prior bug treated failed session restore (403 missing csrf) as success and
+      // returned early — leaving Year/Pathway/meters at blank defaults forever.
+      skipNextAutosave = true;
+      let data = await run("Load", () => api("/api/state"), { skipAutosave: true });
+      if (!data) {
+        // One retry if the first paint failed
+        data = await run("Load", () => api("/api/state"), { skipAutosave: true });
+      }
       const session = readSessionSave();
-      if (session) {
-        try {
-          skipNextAutosave = true;
-          await run("Restore", () =>
-            api("/api/load", { method: "POST", body: JSON.stringify(session) }),
-            { skipAutosave: true }
-          );
+      if (session && csrfToken) {
+        const restored = await run(
+          "Restore",
+          () => api("/api/load", { method: "POST", body: JSON.stringify(session) }),
+          { skipAutosave: true }
+        );
+        if (restored) {
           showToast("Restored session · t" + ((session.tick != null) ? session.tick : "?"));
-          await loadProfile(selectedFigure);
-          return;
-        } catch (e) {
+        } else {
           /* keep named slots; drop only bad session blob */
           try { localStorage.removeItem(LS_SESSION_KEY); } catch (_) {}
         }
       }
-      await run("Load", () => api("/api/state"), { skipAutosave: true });
       await loadProfile(selectedFigure);
     }
     ensureFactionCards();
