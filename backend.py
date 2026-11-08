@@ -19,7 +19,7 @@ from engine.tick import pathway_reading_note
 from engine.tick import player_action as eng_player_action
 from engine.tick import spend_alliance_fund as eng_spend_fund
 from engine.tick import tick as eng_tick
-from engine.counsel import run_counsel_round as eng_counsel, suggest_prompt_chips
+from engine.counsel import counsel_log_texts, run_counsel_round as eng_counsel, suggest_prompt_chips
 from engine.trust import chu_clique_strength, get_trust
 from engine.world import WorldState, new_world
 
@@ -221,7 +221,17 @@ def _project(world: WorldState) -> dict[str, Any]:
             0,
             4 - len(getattr(world, "alliance_fund_spent_purposes", None) or []),
         ),
-        "counsel_log": list(getattr(world, "counsel_log", None) or []),
+        "counsel_log": counsel_log_texts(
+            world,
+            channel=(
+                (
+                    str((getattr(world, "counsel_session", None) or {}).get("channel") or "")
+                    or None
+                )
+                if (getattr(world, "counsel_session", None) or {}).get("open")
+                else None
+            ),
+        ),
         "chronicle_log": list(getattr(world, "chronicle_log", None) or []),
         "chronicle_mode": str(getattr(world, "chronicle_mode", "stub") or "stub"),
         "pattern_reactions": list(getattr(world, "pattern_reactions", None) or [])[-6:],
@@ -237,6 +247,9 @@ def _project(world: WorldState) -> dict[str, Any]:
             "exchanges": int((getattr(world, "counsel_session", None) or {}).get("exchanges") or 0),
             "cap": int((getattr(world, "counsel_session", None) or {}).get("cap") or 5),
             "figure_id": str((getattr(world, "counsel_session", None) or {}).get("figure_id") or ""),
+            "figure_ids": list((getattr(world, "counsel_session", None) or {}).get("figure_ids") or []),
+            "mode": str((getattr(world, "counsel_session", None) or {}).get("mode") or ""),
+            "channel": str((getattr(world, "counsel_session", None) or {}).get("channel") or ""),
         },
         "counsel_prompt_chips": suggest_prompt_chips(world),
         "talkable_cast": _talkable_cast(world),
@@ -375,7 +388,11 @@ def spend_alliance_fund(
 
 
 def _talkable_cast(world: "WorldState") -> list[dict]:
-    """Compact picker rows: portrait + English name + talkable/era status."""
+    """Compact picker rows: portrait + English name + talkable/era status.
+
+    First row is always Atmosphere — broadcast counsel every living figure hears.
+    """
+    from engine.counsel import ATMOSPHERE_ID, living_figures
     from engine.figures import FIGURES, figure_cast_status, figure_label_for, get_figure
 
     short = {
@@ -388,7 +405,22 @@ def _talkable_cast(world: "WorldState") -> list[dict]:
         "li_si": "Li Si",
         "king_jian": "King Jian",
     }
-    out = []
+    living_n = len(living_figures(world))
+    out = [{
+        "id": ATMOSPHERE_ID,
+        "name": "Atmosphere",
+        "short": "Atmosphere",
+        "label": "General atmosphere",
+        "role_label": "Field pressure · all living courts hear",
+        "home": "",
+        "portrait": f"/static/portraits/{ATMOSPHERE_ID}.jpg",
+        "talkable": True,
+        "status": "atmosphere",
+        "note": f"Broadcast — {living_n} living figure(s) answer",
+        "era_unlock_bce": None,
+        "allegiance": "",
+        "atmosphere": True,
+    }]
     for fig in FIGURES:
         fid = fig["id"]
         st = figure_cast_status(world, fid)
@@ -535,8 +567,9 @@ def run_counsel(
     *,
     commit: bool = False,
     figure_id: str | None = None,
+    figure_ids: list[str] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, str]], str | None, dict[str, Any]]:
-    """Player channel = collective consciousness; optional one-on-one via figure_id.
+    """Player channel = collective consciousness; private / circle / atmosphere.
 
     Free-text / chips fill the same prompt. Multi-turn closes by ~3–5 exchanges
     or commit; dial tips apply on close only. No player OCEAN / decision dossier.
@@ -550,6 +583,7 @@ def run_counsel(
         player_initiated=True,
         commit=bool(commit),
         figure_id=figure_id,
+        figure_ids=figure_ids,
     )
     err = None if result.get("ok") else (result.get("error") or "counsel failed")
     projected = _project(world)
@@ -559,6 +593,9 @@ def run_counsel(
         "exchanges_left": result.get("exchanges_left"),
         "mode": result.get("mode"),
         "figure_id": result.get("figure_id") or figure_id,
+        "figure_ids": result.get("figure_ids") or figure_ids or [],
+        "channel": result.get("channel"),
+        "talk_mode": result.get("talk_mode"),
         "prompt_chips": result.get("prompt_chips") or suggest_prompt_chips(world),
         "rows": result.get("rows") or [],
     }

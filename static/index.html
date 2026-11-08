@@ -1528,7 +1528,7 @@
       const status = portraitStatusLabel(f, locked);
       const pid = esc(f.id || "");
       const label = esc(f.short || f.name || f.id || "");
-      const src = esc(f.portrait || ("/static/portraits/" + (f.id || "kaolie") + ".jpg"));
+      const src = esc(portraitUrl(f));
       const tip = esc(f.note || status || label);
       const home = String(f.home || f.allegiance || "").toLowerCase();
       const alleg = home ? ` alleg-${esc(home)}` : "";
@@ -1575,6 +1575,14 @@
       });
     }
 
+    function portraitUrl(fOrId) {
+      if (fOrId && typeof fOrId === "object") {
+        let src = fOrId.portrait || ("/static/portraits/" + (fOrId.id || "kaolie") + ".jpg");
+        return String(src).replace(/\.svg(\b|$)/i, ".jpg$1");
+      }
+      return "/static/portraits/" + String(fOrId || "kaolie") + ".jpg";
+    }
+
     async function openTalk(fid) {
       talkFigureId = fid;
       selectedFigure = fid;
@@ -1582,11 +1590,17 @@
       renderTalkStrip(talkableCast);
       $("talk-empty").hidden = true;
       $("talk-panel").hidden = false;
-      setText("talk-with-label", "with " + (fid || "—"));
-      const card = (talkableCast || []).find((f) => f.id === fid) || { id: fid, short: fid };
+      const isAtmo = fid === "atmosphere";
+      setText("talk-with-label", isAtmo ? "with the atmosphere (all living)" : ("with private · " + (fid || "—")));
+      const card = (talkableCast || []).find((f) => f.id === fid) || {
+        id: fid,
+        short: isAtmo ? "Atmosphere" : fid,
+        role_label: isAtmo ? "Field pressure · all living courts hear" : "",
+        portrait: portraitUrl(fid),
+      };
       const img = $("talk-portrait");
       if (img) {
-        img.src = card.portrait || ("/static/portraits/" + fid + ".jpg");
+        img.src = portraitUrl(card);
         img.alt = card.short || fid;
       }
       const side = $("talk-side");
@@ -1597,6 +1611,16 @@
       }
       setText("talk-name", card.short || card.name || fid);
       setText("talk-role", card.role_label || card.note || "");
+      if (isAtmo) {
+        $("talk-ocean").innerHTML = "";
+        const hint = $("counsel-prompt");
+        if (hint && !hint.value) hint.placeholder = "Speak to the field — every living figure answers…";
+        try {
+          const st = await api("/api/talkable");
+          if (st && st.figures) renderTalkStrip(st.figures);
+        } catch (e) { /* ignore */ }
+        return;
+      }
       // Load OCEAN beside chat + focused pressure chips
       try {
         const data = await api("/api/profile?id=" + encodeURIComponent(fid));
@@ -1617,10 +1641,8 @@
       } catch (e) {
         $("talk-ocean").innerHTML = "";
       }
-      // Refresh chips for this figure via a lightweight state re-read if profile has none
       try {
         const st = await api("/api/talkable");
-        // keep cast fresh; chips come from next counsel or profile helper below
         if (st && st.figures) renderTalkStrip(st.figures);
       } catch (e) { /* ignore */ }
     }
@@ -1803,10 +1825,30 @@ function renderProfile(prof) {
         // keep side panel in sync when session already open
         talkFigureId = focus;
       }
-      if (talkFigureId) setText("talk-with-label", "with " + talkFigureId);
+      if (talkFigureId) {
+        const mode = sess.mode || cr.talk_mode || "";
+        const label = mode === "atmosphere"
+          ? "the atmosphere (all living)"
+          : mode === "circle"
+            ? ("circle · " + ((sess.figure_ids || cr.figure_ids || []).join(", ") || talkFigureId))
+            : ("private · " + talkFigureId);
+        setText("talk-with-label", "with " + label);
+      }
       const ta = $("counsel-log");
       if (ta) {
-        const lines = (s && s.counsel_log) || [];
+        const raw = (s && s.counsel_log) || [];
+        const lines = raw.map((row) => {
+          if (row == null) return "";
+          if (typeof row === "string") return row;
+          if (typeof row === "object") return String(row.text || row.utterance || "");
+          return String(row);
+        }).filter(Boolean);
+        // Also surface latest reply rows immediately (in case log lag)
+        const rows = cr.rows || [];
+        rows.forEach((r) => {
+          const u = r && r.utterance;
+          if (u && !lines.includes(u)) lines.push(u);
+        });
         ta.value = lines.join("\n");
         ta.scrollTop = ta.scrollHeight;
       }

@@ -48,6 +48,8 @@ COUNSEL_LOG_MAX = 40
 BELIEF_MAX_PER_FIGURE = 6
 BELIEF_WEIGHT_DELTA_CAP = 0.12
 BREAKTHROUGH_COOLDOWN = 3
+# Broadcast counsel: field pressure every living agent hears and answers.
+ATMOSPHERE_ID = "atmosphere"
 TRUST_FLIP_CAP = 0.08
 TECH_KNOWN_BUMP = 0.05
 DIALOGUE_MIN = 3
@@ -259,16 +261,104 @@ def living_figures(world: Any) -> list[dict[str, Any]]:
     return out
 
 
-def select_figures(world: Any, n: int | None = None, *, focus_id: str | None = None) -> list[dict[str, Any]]:
+def is_atmosphere(focus_id: str | None) -> bool:
+    return str(focus_id or "").strip().lower() == ATMOSPHERE_ID
+
+
+def _norm_ids(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        raw = [raw]
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        fid = str(item or "").strip().lower()
+        if not fid or fid in seen:
+            continue
+        seen.add(fid)
+        out.append(fid)
+    return out
+
+
+def resolve_audience(
+    world: Any,
+    *,
+    figure_id: str | None = None,
+    figure_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Resolve counsel audience.
+
+    Modes:
+      - private: one figure; sealed from other figures
+      - circle: several named figures; they hear each other only
+      - atmosphere: every living figure hears the broadcast
+      - among_courts: auto tick sample (2–4)
+    """
+    ids = _norm_ids(figure_ids)
+    if not ids and figure_id:
+        ids = _norm_ids([figure_id])
+    if any(is_atmosphere(i) for i in ids) or is_atmosphere(figure_id):
+        living = living_figures(world)
+        return {
+            "mode": "atmosphere",
+            "channel": "atmosphere",
+            "figure_id": ATMOSPHERE_ID,
+            "figure_ids": [f["id"] for f in living],
+            "figs": list(living),
+            "private": False,
+        }
+    if len(ids) >= 2:
+        figs: list[dict[str, Any]] = []
+        for fid in ids:
+            fig = get_figure(fid)
+            if fig and figure_available_for_talk(world, fid):
+                figs.append(fig)
+        key = "+".join(sorted(f["id"] for f in figs))
+        return {
+            "mode": "circle",
+            "channel": f"circle:{key}" if key else "circle",
+            "figure_id": figs[0]["id"] if figs else "",
+            "figure_ids": [f["id"] for f in figs],
+            "figs": figs,
+            "private": False,
+        }
+    if len(ids) == 1:
+        fid = ids[0]
+        fig = get_figure(fid)
+        ok = bool(fig and figure_available_for_talk(world, fid))
+        figs = [fig] if ok and fig else []
+        return {
+            "mode": "private",
+            "channel": f"private:{fid}",
+            "figure_id": fid,
+            "figure_ids": [fid] if figs else [],
+            "figs": figs,
+            "private": True,
+        }
+    return {
+        "mode": "among_courts",
+        "channel": "among_courts",
+        "figure_id": "",
+        "figure_ids": [],
+        "figs": [],
+        "private": False,
+    }
+
+
+def select_figures(
+    world: Any,
+    n: int | None = None,
+    *,
+    focus_id: str | None = None,
+    focus_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
     living = living_figures(world)
     if not living:
         return []
-    # One-on-one: selected talkable figure only
-    if focus_id:
-        fig = get_figure(focus_id)
-        if fig and figure_available_for_talk(world, fig["id"]):
-            return [fig]
-        return []
+    aud = resolve_audience(world, figure_id=focus_id, figure_ids=focus_ids)
+    if aud["mode"] in ("atmosphere", "circle", "private"):
+        return list(aud["figs"])
     if n is None:
         n = 2 + (_seed_int(world.tick, "n") % 3)
     n = max(2, min(4, int(n), len(living)))
@@ -300,13 +390,25 @@ def _ensure_session(world: Any) -> dict[str, Any]:
     """
     sess = getattr(world, "counsel_session", None)
     if not isinstance(sess, dict):
-        sess = {"open": False, "exchanges": 0, "cap": DIALOGUE_MAX, "pressure": "", "figure_id": ""}
+        sess = {
+            "open": False,
+            "exchanges": 0,
+            "cap": DIALOGUE_MAX,
+            "pressure": "",
+            "figure_id": "",
+            "figure_ids": [],
+            "mode": "",
+            "channel": "",
+        }
         world.counsel_session = sess
     sess.setdefault("open", False)
     sess.setdefault("exchanges", 0)
     sess.setdefault("cap", DIALOGUE_MAX)
     sess.setdefault("pressure", "")
     sess.setdefault("figure_id", "")
+    sess.setdefault("figure_ids", [])
+    sess.setdefault("mode", "")
+    sess.setdefault("channel", "")
     # Never attach player ocean / decision history keys
     for ban in ("player_ocean", "player_decisions", "god_view", "choice_dossier"):
         sess.pop(ban, None)
@@ -314,7 +416,40 @@ def _ensure_session(world: Any) -> dict[str, Any]:
 
 
 def clear_counsel_session(world: Any) -> None:
-    world.counsel_session = {"open": False, "exchanges": 0, "cap": DIALOGUE_MAX, "pressure": "", "figure_id": ""}
+    world.counsel_session = {
+        "open": False,
+        "exchanges": 0,
+        "cap": DIALOGUE_MAX,
+        "pressure": "",
+        "figure_id": "",
+        "figure_ids": [],
+        "mode": "",
+        "channel": "",
+    }
+
+
+def counsel_log_texts(world: Any, channel: str | None = None) -> list[str]:
+    """Return counsel lines visible on a channel. Private threads never leak across."""
+    rows = list(getattr(world, "counsel_log", None) or [])
+    out: list[str] = []
+    for row in rows:
+        if isinstance(row, dict):
+            ch = str(row.get("channel") or "among_courts")
+            text = str(row.get("text") or "")
+        else:
+            # Legacy untagged lines → among_courts only
+            ch = "among_courts"
+            text = str(row)
+        if not text:
+            continue
+        if channel:
+            if ch == channel:
+                out.append(text)
+        else:
+            # No channel: only non-private (atmosphere / circle / among)
+            if not ch.startswith("private:"):
+                out.append(text)
+    return out
 
 
 def _ideology_for(fig: dict[str, Any] | None = None, *, home: str = "", fid: str = "") -> str:
@@ -872,7 +1007,8 @@ def suggest_prompt_chips(world: Any, n: int = 2, figure_id: str | None = None) -
     sess = _ensure_session(world)
     closing = sess.get("open") and int(sess.get("exchanges", 0)) >= DIALOGUE_MIN - 1
     focus = (figure_id or sess.get("figure_id") or "").strip().lower()
-    fig = get_figure(focus) if focus else None
+    atmosphere = is_atmosphere(focus)
+    fig = get_figure(focus) if focus and not atmosphere else None
     home = str((fig or {}).get("home") or "")
     role = _speech_role_for(fig, fid=focus) if fig else ""
     ideo = _ideology_for(fig, home=home, fid=focus) if fig else ""
@@ -884,6 +1020,19 @@ def suggest_prompt_chips(world: Any, n: int = 2, figure_id: str | None = None) -
 
     if closing:
         pool = ["Commit: contribute.", "Commit: withhold.", "Close counsel."]
+    elif atmosphere:
+        # Broadcast: pressure the whole living cast can hear
+        pool = [
+            "Speak to the field — every court still listening.",
+            "What does this quarter ask of every living banner?",
+        ]
+        if qin_p >= 55:
+            pool.append("Qin weather is loud — who among you still answers?")
+        if cohesion < 45:
+            pool.append("Cohesion frays across courts. Repair or accept the split?")
+        qi = world.agents.get("qi")
+        if qi is not None and not getattr(qi, "annexed", False):
+            pool.append("Qi walls, Chu spokes, Qin fuse — name the next shared move.")
     elif focus and fig:
         pool = []
         # Role-shaped pressure (what you ask this person to weigh)
@@ -1081,13 +1230,24 @@ def _stub_row(world: Any, fig: dict[str, Any], pressure: str | None = None, *, d
     return row
 
 
-def rule_counsel(world: Any, *, n: int | None = None, pressure: str | None = None, deciding: bool = False, focus_id: str | None = None) -> list[dict[str, Any]]:
+def rule_counsel(
+    world: Any,
+    *,
+    n: int | None = None,
+    pressure: str | None = None,
+    deciding: bool = False,
+    focus_id: str | None = None,
+    focus_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
     try:
         from .figure_memory import ensure_figure_memories
         ensure_figure_memories(world)
     except Exception:
         pass
-    return [_stub_row(world, f, pressure, deciding=deciding) for f in select_figures(world, n=n, focus_id=focus_id)]
+    return [
+        _stub_row(world, f, pressure, deciding=deciding)
+        for f in select_figures(world, n=n, focus_id=focus_id, focus_ids=focus_ids)
+    ]
 
 
 def _clamp_row(raw: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1320,12 +1480,17 @@ def apply_breakthrough(world: Any, rows: list[dict[str, Any]]) -> dict[str, Any]
     return {}
 
 
-def _log(world: Any, line: str) -> None:
+def _log(world: Any, line: str, *, channel: str | None = None) -> None:
+    """Append a counsel line tagged by audience channel (private never cross-leaks)."""
     if not hasattr(world, "counsel_log") or world.counsel_log is None:
         world.counsel_log = []
-    world.counsel_log.append(_strip_ui(line))
-    if len(world.counsel_log) > COUNSEL_LOG_MAX:
-        world.counsel_log = world.counsel_log[-COUNSEL_LOG_MAX:]
+    sess = getattr(world, "counsel_session", None) or {}
+    ch = (channel or sess.get("channel") or "among_courts")
+    world.counsel_log.append({"channel": str(ch), "text": _strip_ui(line)})
+    # Keep a larger buffer when threads share one list; still bound growth
+    cap = max(COUNSEL_LOG_MAX * 3, 120)
+    if len(world.counsel_log) > cap:
+        world.counsel_log = world.counsel_log[-cap:]
 
 
 def _field_snapshot(world: Any, figs: list[dict[str, Any]]) -> str:
@@ -1364,24 +1529,57 @@ def _field_snapshot(world: Any, figs: list[dict[str, Any]]) -> str:
     return "\n".join(lines)[:1800]
 
 
-def _generate_rows(world: Any, *, pressure: str | None, force_stub: bool, deciding: bool, focus_id: str | None = None) -> tuple[list[dict[str, Any]], str, str | None]:
-    figs = select_figures(world, focus_id=focus_id)
+def _generate_rows(
+    world: Any,
+    *,
+    pressure: str | None,
+    force_stub: bool,
+    deciding: bool,
+    focus_id: str | None = None,
+    focus_ids: list[str] | None = None,
+    audience: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], str, str | None]:
+    aud = audience or resolve_audience(world, figure_id=focus_id, figure_ids=focus_ids)
+    figs = list(aud.get("figs") or select_figures(world, focus_id=focus_id, focus_ids=focus_ids))
+    talk_mode = str(aud.get("mode") or "among_courts")
     mode, err, rows = "stub", None, []
-    min_rows = 1 if focus_id else 2
+    private = talk_mode == "private"
+    circle = talk_mode == "circle"
+    atmosphere = talk_mode == "atmosphere"
+    min_rows = 1 if private else max(1, len(figs) if (atmosphere or circle) else 2)
     use_llm = (not force_stub) and counsel_backend_name() == "llm"
     if use_llm:
         try:
             from .counsel_llm import complete_counsel_json
 
             snap = _field_snapshot(world, figs)
-            if focus_id:
-                snap += f"\nONE-ON-ONE with {focus_id}: reply as that figure only."
+            if atmosphere:
+                snap += (
+                    "\nATMOSPHERE BROADCAST: the player speaks to the general field. "
+                    "EVERY listed living figure hears the same pressure and must answer "
+                    "in their own voice (one row per figure_id)."
+                )
+            elif circle:
+                names = ", ".join(f["id"] for f in figs)
+                snap += (
+                    f"\nCIRCLE COUNSEL with [{names}]: only these figures hear each other. "
+                    "Each must answer in their own voice. Do not invent outsiders."
+                )
+            elif private:
+                snap += (
+                    f"\nPRIVATE one-on-one with {aud.get('figure_id')}: "
+                    "reply as that figure only. No other court hears this talk."
+                )
             if deciding:
                 snap += "\nFORCE CLOSE: emit final decision leans (contribute|withhold|defect) for each figure."
             raw = complete_counsel_json(snap, prompt=pressure)
             rows = parse_counsel_payload(raw)
-            if focus_id:
-                rows = [r for r in rows if str(r.get("figure_id") or "").lower() == str(focus_id).lower()] or rows[:1]
+            want = {f["id"] for f in figs}
+            if private:
+                fid = str(aud.get("figure_id") or "")
+                rows = [r for r in rows if str(r.get("figure_id") or "").lower() == fid] or rows[:1]
+            elif atmosphere or circle:
+                rows = [r for r in rows if str(r.get("figure_id") or "").lower() in want]
             if len(rows) < min_rows:
                 raise ValueError("short")
             mode = "llm"
@@ -1389,16 +1587,40 @@ def _generate_rows(world: Any, *, pressure: str | None, force_stub: bool, decidi
             err = f"llm_fallback:{type(exc).__name__}"
             rows = []
     if not rows:
-        rows = rule_counsel(world, pressure=pressure, deciding=deciding, focus_id=focus_id)
+        rows = rule_counsel(
+            world,
+            pressure=pressure,
+            deciding=deciding,
+            focus_id=None if (atmosphere or circle or not private) else aud.get("figure_id"),
+            focus_ids=aud.get("figure_ids") if (atmosphere or circle) else None,
+        )
         mode = "stub"
     living_ids = {f["id"] for f in living_figures(world)}
     living_homes = {f["home"] for f in living_figures(world)}
-    if focus_id:
-        rows = [r for r in rows if str(r.get("figure_id") or "").lower() == str(focus_id).lower()][:1]
+    if private:
+        fid = str(aud.get("figure_id") or "")
+        rows = [r for r in rows if str(r.get("figure_id") or "").lower() == fid][:1]
+    elif atmosphere or circle:
+        by_id = {
+            str(r.get("figure_id") or "").lower(): r
+            for r in rows
+            if str(r.get("figure_id") or "").lower() in living_ids
+        }
+        rows = [by_id[f["id"]] for f in figs if f["id"] in by_id]
+        if len(rows) < len(figs):
+            have = {str(r.get("figure_id") or "").lower() for r in rows}
+            for f in figs:
+                if f["id"] not in have:
+                    rows.append(_stub_row(world, f, pressure, deciding=deciding))
     else:
         rows = [r for r in rows if r.get("home") in living_homes][:4]
     if len(rows) < min_rows:
-        rows = rule_counsel(world, pressure=pressure, deciding=deciding, focus_id=focus_id)
+        rows = [
+            _stub_row(world, f, pressure, deciding=deciding)
+            for f in (figs or select_figures(world, focus_id=focus_id, focus_ids=focus_ids))
+        ]
+        if not private:
+            rows = rows[: max(min_rows, len(rows))]
         mode = "stub"
     for r in rows:
         r["utterance"] = _strip_ui(r.get("utterance") or "")[:140]
@@ -1407,8 +1629,19 @@ def _generate_rows(world: Any, *, pressure: str | None, force_stub: bool, decidi
     return rows, mode, err
 
 
-def _apply_close(world: Any, rows: list[dict[str, Any]], mode: str, err: str | None, pressure: str | None) -> dict[str, Any]:
+def _apply_close(
+    world: Any,
+    rows: list[dict[str, Any]],
+    mode: str,
+    err: str | None,
+    pressure: str | None,
+    *,
+    audience: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Apply dial tips + cascade/breakthrough on close; wipe session pressure (no dossier)."""
+    aud = audience or resolve_audience(world)
+    channel = str(aud.get("channel") or "among_courts")
+    private = bool(aud.get("private"))
     tips = apply_counsel_tips(world, rows)
     belief = apply_belief_seeds(world, rows)
     breakthrough = apply_breakthrough(world, rows)
@@ -1420,9 +1653,17 @@ def _apply_close(world: Any, rows: list[dict[str, Any]], mode: str, err: str | N
             f"{row['stance_lean']} Δloy={row['loyalty_shift']:+.2f} "
             f"[{row['event_tag']}] {row['utterance']}"
         )
-        _log(world, line)
-        world.append_log(line, event_id="counsel", actor=str(row["figure_id"]), action="decision")
-    _log(world, f"[t={world.tick}] counsel_closed mode={mode} n={len(rows)}" + (f" ({err})" if err else ""))
+        _log(world, line, channel=channel)
+        # Private 1:1 stays off the public quarterly episode
+        if not private:
+            world.append_log(line, event_id="counsel", actor=str(row["figure_id"]), action="decision")
+    _log(
+        world,
+        f"[t={world.tick}] counsel_closed mode={mode} channel={channel} n={len(rows)}"
+        + (f" ({err})" if err else ""),
+        channel=channel,
+    )
+    focus = str(aud.get("figure_id") or "") or None
     clear_counsel_session(world)  # wipe ephemeral pressure text — no player memory
     return {
         "ok": True,
@@ -1432,9 +1673,13 @@ def _apply_close(world: Any, rows: list[dict[str, Any]], mode: str, err: str | N
         "tips": tips,
         "applied_belief": belief or None,
         "applied_breakthrough": breakthrough or None,
-        "prompt_chips": suggest_prompt_chips(world, figure_id=(rows[0].get("figure_id") if rows else None)),
+        "prompt_chips": suggest_prompt_chips(world, figure_id=focus),
         "exchange": 0,
         "exchanges_left": 0,
+        "figure_id": focus,
+        "figure_ids": list(aud.get("figure_ids") or []),
+        "channel": channel,
+        "talk_mode": aud.get("mode"),
         "error": err,
     }
 
@@ -1447,8 +1692,9 @@ def run_counsel_round(
     player_initiated: bool = False,
     commit: bool = False,
     figure_id: str | None = None,
+    figure_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Auto: among-courts one-shot. Player: optional one-on-one via figure_id; close by 3–5."""
+    """Auto: among-courts one-shot. Player: private / circle / atmosphere; close by 3–5."""
     if getattr(world, "run_ended", False):
         return {"ok": False, "mode": "stub", "rows": [], "closed": True, "error": "run_ended", "prompt_chips": suggest_prompt_chips(world)}
 
@@ -1456,14 +1702,23 @@ def run_counsel_round(
     if not player_initiated:
         if not getattr(world, "counsel_auto", True):
             return {"ok": True, "mode": "stub", "rows": [], "closed": True, "skipped": True, "prompt_chips": suggest_prompt_chips(world)}
-        rows, mode, err = _generate_rows(world, pressure=None, force_stub=force_stub, deciding=True, focus_id=None)
-        return _apply_close(world, rows, mode, err, None)
+        aud = resolve_audience(world)
+        rows, mode, err = _generate_rows(
+            world, pressure=None, force_stub=force_stub, deciding=True, audience=aud
+        )
+        return _apply_close(world, rows, mode, err, None, audience=aud)
 
-    # Player dialogue — optional per-figure focus
+    # Player dialogue — private 1:1, circle (several), or atmosphere broadcast
     left = int(getattr(world, "counsel_actions_left", 1))
     sess = _ensure_session(world)
-    focus = (figure_id or sess.get("figure_id") or "").strip().lower() or None
-    if focus and not figure_available_for_talk(world, focus):
+    ids_in = _norm_ids(figure_ids) or _norm_ids(sess.get("figure_ids"))
+    if not ids_in and (figure_id or sess.get("figure_id")):
+        ids_in = _norm_ids([figure_id or sess.get("figure_id")])
+    aud = resolve_audience(world, figure_id=figure_id or sess.get("figure_id"), figure_ids=ids_in)
+    focus = str(aud.get("figure_id") or "") or None
+    channel = str(aud.get("channel") or "among_courts")
+
+    if aud["mode"] in ("private", "circle") and not aud.get("figs"):
         return {
             "ok": False,
             "mode": getattr(world, "counsel_mode", "stub"),
@@ -1471,6 +1726,8 @@ def run_counsel_round(
             "closed": True,
             "error": "Figure not available (era-locked or home annexed)",
             "figure_id": focus,
+            "figure_ids": list(aud.get("figure_ids") or []),
+            "channel": channel,
             "prompt_chips": suggest_prompt_chips(world, figure_id=focus),
         }
 
@@ -1490,9 +1747,20 @@ def run_counsel_round(
         sess["cap"] = DIALOGUE_MIN + (_seed_int(world.tick, "cap") % (DIALOGUE_MAX - DIALOGUE_MIN + 1))
         sess["pressure"] = ""
         sess["figure_id"] = focus or ""
-
-    # Stick to session focus once open
-    focus = (sess.get("figure_id") or focus or "").strip().lower() or None
+        sess["figure_ids"] = list(aud.get("figure_ids") or [])
+        sess["mode"] = aud.get("mode") or ""
+        sess["channel"] = channel
+    else:
+        # Stick to session audience once open
+        aud = resolve_audience(
+            world,
+            figure_id=sess.get("figure_id"),
+            figure_ids=list(sess.get("figure_ids") or []) or None,
+        )
+        focus = str(aud.get("figure_id") or "") or None
+        channel = str(aud.get("channel") or sess.get("channel") or "among_courts")
+        sess["channel"] = channel
+        sess["mode"] = aud.get("mode") or sess.get("mode") or ""
 
     pressure = _strip_ui(prompt or "")[:240]
     sess["pressure"] = pressure
@@ -1500,27 +1768,33 @@ def run_counsel_round(
     ex = int(sess["exchanges"])
     cap = int(sess.get("cap", DIALOGUE_MAX))
     pb = _pressure_bias(pressure)
-    force_close = bool(commit) or ex >= cap or pb["close"] > 0 or (ex >= DIALOGUE_MIN and ("close counsel" in pressure.lower() or "commit:" in pressure.lower()))
+    force_close = bool(commit) or ex >= cap or pb["close"] > 0 or (
+        ex >= DIALOGUE_MIN and ("close counsel" in pressure.lower() or "commit:" in pressure.lower())
+    )
 
     if force_close:
-        rows, mode, err = _generate_rows(world, pressure=pressure, force_stub=force_stub, deciding=True, focus_id=focus)
-        out = _apply_close(world, rows, mode, err, pressure)
+        rows, mode, err = _generate_rows(
+            world, pressure=pressure, force_stub=force_stub, deciding=True, audience=aud
+        )
+        out = _apply_close(world, rows, mode, err, pressure, audience=aud)
         out["exchange"] = ex
-        out["figure_id"] = focus
         return out
 
-    rows, mode, err = _generate_rows(world, pressure=pressure, force_stub=force_stub, deciding=False, focus_id=focus)
+    rows, mode, err = _generate_rows(
+        world, pressure=pressure, force_stub=force_stub, deciding=False, audience=aud
+    )
     world.counsel_mode = mode
+    private = bool(aud.get("private"))
+    if pressure:
+        _log(world, f"[t={world.tick}] {channel} x{ex}/{cap}: {pressure[:80]}", channel=channel)
     for row in rows:
         line = (
             f"[t={world.tick}] x{ex}/{cap} {row['figure_id']}@{row['home']} "
             f"{row['stance_lean']} [{row['event_tag']}] {row['utterance']}"
         )
-        _log(world, line)
-        world.append_log(line, event_id="counsel", actor=str(row["figure_id"]), action="reply")
-    channel = f"talk:{focus}" if focus else "among_courts"
-    if pressure:
-        _log(world, f"[t={world.tick}] {channel} x{ex}/{cap}: {pressure[:80]}")
+        _log(world, line, channel=channel)
+        if not private:
+            world.append_log(line, event_id="counsel", actor=str(row["figure_id"]), action="reply")
     return {
         "ok": True,
         "mode": mode,
@@ -1533,5 +1807,8 @@ def run_counsel_round(
         "exchange": ex,
         "exchanges_left": max(0, cap - ex),
         "figure_id": focus,
+        "figure_ids": list(aud.get("figure_ids") or []),
+        "channel": channel,
+        "talk_mode": aud.get("mode"),
         "error": err,
     }

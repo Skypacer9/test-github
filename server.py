@@ -854,9 +854,10 @@ def api_broker_mediation():
 
 @app.post("/api/counsel")
 def api_counsel():
-    """Counsel among figures or one-on-one via figure_id.
+    """Counsel: private one-on-one, circle (figure_ids), or atmosphere broadcast.
 
-    Body: { "prompt": "...", "commit": false, "figure_id": "zhaoxiang"|null }.
+    Body: { "prompt": "...", "commit": false, "figure_id": "zhaoxiang"|null,
+            "figure_ids": ["kaolie","chunshen"] }.
     Tips dials on close only. English UI. Defaults to offline stub.
     """
     blocked = _mutate_guard()
@@ -869,9 +870,13 @@ def api_counsel():
     figure_id = body.get("figure_id") or body.get("figure") or None
     if figure_id is not None:
         figure_id = str(figure_id).strip().lower() or None
+    raw_ids = body.get("figure_ids") or body.get("figures") or None
+    figure_ids = None
+    if isinstance(raw_ids, (list, tuple)):
+        figure_ids = [str(x).strip().lower() for x in raw_ids if str(x).strip()]
     # LLM budget enforced inside counsel_llm/chronicle via admit_llm_call (same caps as tick).
     projected, msgs, err, result = run_counsel(
-        st, prompt=str(prompt), commit=commit, figure_id=figure_id
+        st, prompt=str(prompt), commit=commit, figure_id=figure_id, figure_ids=figure_ids
     )
     pack = _pack(projected, msgs)
     pack["counsel_result"] = projected.get("counsel_result") or result
