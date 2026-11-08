@@ -18,7 +18,8 @@ import re
 from typing import Any
 
 CHRONICLE_LOG_MAX = 30
-CHRONICLE_EVERY_N = 3
+# Every Advance writes a wry Shiji-style line (was 3 → felt like skips on most quarters).
+CHRONICLE_EVERY_N = 1
 
 _READING_NOTE = "One cultural reading among several — not a locked destiny."
 
@@ -145,8 +146,16 @@ def assess_cultural_pattern(world: Any, *, reason: str | None = None) -> dict[st
         + 0.15 * legalist_n
         + 0.1 * resent
         + 0.22 * ideo_m["legalist"],
-        "mercantile_caution": 0.12 + 0.25 * isol_n + (0.2 if path == "other" else 0.05) + 0.1 * (1.0 - trust)
-        + 0.18 * ideo_m["guanzi"],
+        # Mercantile/Qi-Linzi caution only when Qin force is not already dominating the board
+        "mercantile_caution": (
+            0.12
+            + 0.25 * isol_n
+            + (0.2 if path == "other" else 0.05)
+            + 0.1 * (1.0 - trust)
+            + 0.18 * ideo_m["guanzi"]
+            - (0.35 if path == "qin_path" else 0.0)
+            - (0.2 if pressure >= 75 else 0.0)
+        ),
         "exhausted_stalemate": 0.1
         + (0.4 if path == "stalemate" else 0.05)
         + 0.15 * (1.0 if 40 <= coh < 70 else 0)
@@ -215,7 +224,84 @@ def assess_cultural_pattern(world: Any, *, reason: str | None = None) -> dict[st
     }
 
 
-def _body_for_state(pattern: dict[str, Any], pick: int) -> str:
+# English gloss for packet ids — vault/primary-text grounded, narrator-safe (no CJK).
+_PACKET_EN_GLOSS: dict[str, str] = {
+    "legalist_fa": "fa and ranks: order by statute and reward, not blood",
+    "mohist_shangxian": "elevate the worthy; condemn wasteful offensive war",
+    "dao_guodian": "Guodian Dao color — weak use, timing, receptivity",
+    "ru_li": "li and ren: ritual names that bind power",
+    "huang_lao": "Huang-Lao mix — Dao as frame, xingming/fa as tools",
+    # "Qi hegemonic" = Guanzi/Linzi mercantile–fiscal pattern (NOT a Qin typo).
+    # Prefer "Linzi mercantile" wording so high Qin force is never miscited as Qi hegemony.
+    "guanzi": "Guanzi technics — Linzi grain, workshops, Qi mercantile–fiscal order",
+    "lineage_shi": "lineage honor and ancestral precedent",
+    "tianxia_da_yitong": "da-yitong ideal — credible unity without one court swallowing all",
+    "chu_patron_client": "Chu patron–client web: hospitality and spokes over central fa",
+}
+
+
+def _packet_symbol_bits(world: Any, *, pick: int, limit: int = 2) -> list[str]:
+    """Pull short English symbol bites from active belief packets (catalog + vault gloss)."""
+    try:
+        from .packets import PACKET_CATALOG, normalize_packet_list
+    except Exception:
+        return []
+    scored: list[tuple[float, str, str]] = []
+    for ag in world.agents.values():
+        if getattr(ag, "annexed", False):
+            continue
+        weights = dict(getattr(ag, "packet_weights", None) or {})
+        pids = normalize_packet_list(getattr(ag, "active_packets", None) or list(weights.keys()))
+        for pid in pids:
+            pkt = PACKET_CATALOG.get(pid)
+            if not pkt:
+                continue
+            w = float(weights.get(pid, pkt.strength or 0.4))
+            gloss = _PACKET_EN_GLOSS.get(pid, "")
+            anchor = _strip_cjk(getattr(pkt, "anchor", "") or "")
+            # Drop leftover punctuation after CJK strip
+            anchor = re.sub(r"\s*[—\-]\s*$", "", anchor).strip()
+            tags = []
+            ont = getattr(pkt, "ontology", None)
+            if ont is not None:
+                tags.extend(list(getattr(ont, "legitimacy_source", None) or [])[:2])
+            bit = gloss or anchor
+            if not bit and tags:
+                # Never surface bare "qi hegemonic order" under Qin-path — that reads as a Qin typo
+                safe_tags = [
+                    t for t in tags
+                    if not (
+                        t == "qi_hegemonic_order"
+                        and str(getattr(getattr(world, "meso", None), "pathway_soft", "") or "") == "qin_path"
+                    )
+                ]
+                if safe_tags:
+                    bit = "legitimacy via " + ", ".join(t.replace("_", " ") for t in safe_tags[:2])
+            # Under Qin domination, rephrase Guanzi as Linzi mercantile caution (not Qi conquest hegemony)
+            path = str(getattr(getattr(world, "meso", None), "pathway_soft", "") or "")
+            press = float(getattr(world, "qin_pressure", 0) or 0)
+            if pid == "guanzi" and bit and (path == "qin_path" or press >= 75):
+                bit = "Guanzi residue — Linzi mercantile caution under Qin pressure"
+            if bit:
+                scored.append((w, pid, bit))
+    if not scored:
+        return []
+    scored.sort(key=lambda t: (-t[0], t[1]))
+    top = scored[:6]
+    out: list[str] = []
+    seen: set[str] = set()
+    for i in range(len(top)):
+        _, pid, bit = top[(pick + i) % len(top)]
+        if pid in seen:
+            continue
+        seen.add(pid)
+        out.append(f"{pid.replace('_', ' ')} — {bit}")
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _body_for_state(pattern: dict[str, Any], pick: int, *, world: Any | None = None) -> str:
     state = pattern["state"]
     tone = pattern["tone"]
     path = pattern["path"]
@@ -280,7 +366,12 @@ def _body_for_state(pattern: dict[str, Any], pick: int) -> str:
     }
     opts = bodies.get(state) or bodies["plural_contest"]
     body = opts[pick % len(opts)]
-    return f"{body} {varnish}"
+    symbol = ""
+    if world is not None:
+        bits = _packet_symbol_bits(world, pick=pick, limit=2)
+        if bits:
+            symbol = " Symbols in play — " + "; ".join(bits) + "."
+    return f"{body} {varnish}{symbol}"
 
 
 def stub_chronicle(world: Any, *, reason: str | None = None) -> str:
@@ -316,7 +407,7 @@ def stub_chronicle(world: Any, *, reason: str | None = None) -> str:
             f"mean resentment {pattern['resentment']:.2f}, featured trust {pattern['trust']:.2f}."
         )
 
-    body = _body_for_state(pattern, pick)
+    body = _body_for_state(pattern, pick, world=world)
     state_tag = f" Cultural state reading: {pattern['state'].replace('_', ' ')} ({pattern['tone']} tone)."
 
     # Light event spice (not path slogans)
@@ -366,7 +457,10 @@ def _llm_polish(draft: str, world: Any, pattern: dict[str, Any]) -> str | None:
                         f"resentment={pattern['resentment']:.2f} cohesion={pattern['cohesion']:.0f} "
                         f"trust={pattern['trust']:.2f} pathway={pattern['path']} "
                         f"syncretic_earned={pattern['syncretic_earned']} "
-                        f"renaissance_earned={pattern['renaissance_earned']}\nDraft:\n{draft}"
+                        f"renaissance_earned={pattern['renaissance_earned']}\n"
+                        "Keep any 'Symbols in play' packet anchors/claims from the draft — "
+                        "they are vault-grounded belief-packet gloss, not decoration.\n"
+                        f"Draft:\n{draft}"
                     ),
                 },
             ],

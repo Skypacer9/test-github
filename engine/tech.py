@@ -615,6 +615,24 @@ def adoption_meter_rows(world: "WorldState") -> list[dict[str, Any]]:
 
 def field_tech_summary(world: "WorldState") -> dict[str, Any]:
     board = getattr(world, "tech", None) or seed_tech_board()
+    # Per-court craft roster — real TECH_DAG nodes, not a fake "available tech %"
+    by_state: dict[str, dict[str, Any]] = {}
+    for sid, st in board.states.items():
+        known_labels: list[str] = []
+        fielded_labels: list[str] = []
+        for nid, node in TECH_DAG.items():
+            k = float(st.known.get(nid, 0.0))
+            a = float(st.adopted.get(nid, 0.0))
+            if k >= 0.45:
+                known_labels.append(node.label)
+            if a >= 0.35:
+                fielded_labels.append(node.label)
+        by_state[sid] = {
+            "known": known_labels,
+            "fielded": fielded_labels,
+            "known_n": len(known_labels),
+            "fielded_n": len(fielded_labels),
+        }
     return {
         "military": dict(board.military),
         "logistics": dict(board.logistics),
@@ -626,4 +644,9 @@ def field_tech_summary(world: "WorldState") -> dict[str, Any]:
         "qin_mil_advantage": board.qin_mil_advantage,
         "adoption_meter": float(getattr(world.world, "adoption_meter", board.adoption_mean.get("qin", 0))),
         "rows": adoption_meter_rows(world),
+        "by_state": by_state,
+        "honesty": (
+            "TECH_DAG crafts (known ≠ fielded). Aggregate military/adoption "
+            "scalars are rollups — not an 'available tech %' meter."
+        ),
     }

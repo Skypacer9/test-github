@@ -6,24 +6,41 @@ from copy import deepcopy
 from typing import Any
 
 from engine.action_labels import short_label, who_vs_qin_line
-from engine.demographics import field_demographics_summary
+from engine.demographics import field_court_economy, field_demographics_summary
 from engine.dossiers import dossier_for, dossier_bundle
 from engine.geo import M4_TABLE, STATE_GEO, state_geo_card
 from engine.packets import conflict_score, packet_public_view, resolve_packet_id
 from engine.patron_client import clique_sync, sync_bonus
 from engine.tech import field_tech_summary, tech_pressure_delta, tech_quorum_ok, tech_structural_damage
-from engine.conflict import ensure_econ_fields, resource_pool
+from engine.conflict import NEIGHBORS, ensure_econ_fields, military_strength, offensive_capacity, resource_pool
+from engine.tick import alliance_fund_scale, alliance_membership
 from engine.tick import attempt_alliance as eng_alliance
 from engine.tick import intervene_many as eng_intervene_many
 from engine.tick import pathway_reading_note
 from engine.tick import player_action as eng_player_action
+from engine.tick import alliance_offensive as eng_alliance_offensive
+from engine.tick import player_offensive as eng_player_offensive
 from engine.tick import spend_alliance_fund as eng_spend_fund
 from engine.tick import tick as eng_tick
-from engine.counsel import run_counsel_round as eng_counsel, suggest_prompt_chips
+from engine.counsel import counsel_log_texts, run_counsel_round as eng_counsel, suggest_prompt_chips
 from engine.trust import chu_clique_strength, get_trust
 from engine.world import WorldState, new_world
 
 _ENGINE_KEY = "_engine"
+
+
+def _alliance_membership_ui(world: WorldState) -> dict[str, Any]:
+    snap = alliance_membership(world)
+    scale = alliance_fund_scale(world)
+    return {
+        "member_ids": list(snap.get("member_ids") or []),
+        "active_ids": list(snap.get("active_ids") or []),
+        "n_members": int(snap.get("n_members") or 0),
+        "n_active": int(snap.get("n_active") or 0),
+        "cost_mult": float(scale.get("cost_mult") or 1.0),
+        "effect_mult": float(scale.get("effect_mult") or 1.0),
+    }
+
 
 # Legacy alias — prefer dossiers.dossier_for
 DOSSIERS = {
@@ -44,6 +61,9 @@ def _msg(role: str, content: str) -> dict[str, str]:
 def _speaker_line(rec: dict[str, Any]) -> tuple[str, str]:
     actor = str(rec.get("actor") or "world")
     text = str(rec.get("text") or "")
+    # Cultural chronicle rows always speak as Chronicler (actor may be chronicler/world)
+    if str(rec.get("event_id") or "") == "chronicle":
+        return "Chronicler", text
     names = {
         "qin": "Qin Court",
         "chu": "Chu Court",
@@ -53,6 +73,7 @@ def _speaker_line(rec: dict[str, Any]) -> tuple[str, str]:
         "wei": "Wei Court",
         "yan": "Yan Court",
         "world": "Chronicler",
+        "chronicler": "Chronicler",
     }
     return names.get(actor, actor.title()), text
 
@@ -83,6 +104,9 @@ def _project(world: WorldState) -> dict[str, Any]:
             "resources": float(resource_pool(ag)),
             "geographic_yield": float(getattr(ag, "geographic_yield", 0.6)),
             "military": float((getattr(world, "tech", None) and getattr(world.tech, "military", {}) or {}).get(aid, 0.0) or 0.0),
+            # Field force = conflict military_strength (not mil×man alone — that
+            # wrongly ranked Chu thin despite vault high areal pop + riverine levy).
+            "force": float(military_strength(world, aid)),
             "tech_adopt": float((getattr(world, "tech", None) and getattr(world.tech, "adoption_mean", {}) or {}).get(aid, 0.0) or 0.0),
             "annexed": bool(getattr(ag, "annexed", False)),
             "annexed_by": getattr(ag, "annexed_by", None),
@@ -119,6 +143,7 @@ def _project(world: WorldState) -> dict[str, Any]:
     ][-12:]
     geo_by_state = {sid: state_geo_card(sid) for sid in STATE_GEO}
     demography = field_demographics_summary(world)
+    court_economy = field_court_economy(world)
     return {
         "tick": world.tick,
         "quarter": max(1, world.tick) if world.tick else 1,
@@ -197,6 +222,7 @@ def _project(world: WorldState) -> dict[str, Any]:
         },
         # PLACEHOLDER demographics / satisfaction / available manpower
         "demographics": demography,
+        "court_economy": court_economy,
         "satisfaction": float(demography.get("mean_satisfaction", 0.0)),
         "available_manpower": float(demography.get("mean_manpower", 0.0)),
         "run_ended": bool(getattr(world, "run_ended", False)),
@@ -213,15 +239,49 @@ def _project(world: WorldState) -> dict[str, Any]:
         "player_invest_actions_left": int(getattr(world, "player_invest_actions_left", 1)),
         "alliance_attempt_actions_left": int(getattr(world, "alliance_attempt_actions_left", 1)),
         "intervene_actions_left": int(getattr(world, "intervene_actions_left", 1)),
+        "player_offensive_actions_left": int(getattr(world, "player_offensive_actions_left", 3)),
+        "player_offensive_fronts": {
+            str(k): [str(t) for t in (v if isinstance(v, list) else [])]
+            for k, v in (getattr(world, "player_offensive_fronts", None) or {}).items()
+        },
+        "player_offensive_front_counts": {
+            str(k): (len(v) if isinstance(v, list) else int(v or 0))
+            for k, v in (getattr(world, "player_offensive_fronts", None) or {}).items()
+        },
+        "last_player_offensive": (
+            dict(getattr(world, "last_player_offensive"))
+            if isinstance(getattr(world, "last_player_offensive", None), dict)
+            else None
+        ),
+        "offensive_capacity": {
+            sid: offensive_capacity(world, sid)
+            for sid in ("qin", "chu", "qi", "zhao", "han", "wei", "yan")
+            if sid in world.agents
+        },
+        "offensive_neighbors": {sid: list(NEIGHBORS.get(sid, ())) for sid in NEIGHBORS},
         "alliance_fund_spent_purposes": list(
             getattr(world, "alliance_fund_spent_purposes", None) or []
         ),
+        "alliance_last_contributors": list(
+            getattr(world, "alliance_last_contributors", None) or []
+        ),
+        "alliance_membership": _alliance_membership_ui(world),
         # remaining purpose slots this tick (compat / purse count)
         "alliance_fund_actions_left": max(
             0,
-            4 - len(getattr(world, "alliance_fund_spent_purposes", None) or []),
+            5 - len(getattr(world, "alliance_fund_spent_purposes", None) or []),
         ),
-        "counsel_log": list(getattr(world, "counsel_log", None) or []),
+        "counsel_log": counsel_log_texts(
+            world,
+            channel=(
+                (
+                    str((getattr(world, "counsel_session", None) or {}).get("channel") or "")
+                    or None
+                )
+                if (getattr(world, "counsel_session", None) or {}).get("open")
+                else None
+            ),
+        ),
         "chronicle_log": list(getattr(world, "chronicle_log", None) or []),
         "chronicle_mode": str(getattr(world, "chronicle_mode", "stub") or "stub"),
         "pattern_reactions": list(getattr(world, "pattern_reactions", None) or [])[-6:],
@@ -237,6 +297,9 @@ def _project(world: WorldState) -> dict[str, Any]:
             "exchanges": int((getattr(world, "counsel_session", None) or {}).get("exchanges") or 0),
             "cap": int((getattr(world, "counsel_session", None) or {}).get("cap") or 5),
             "figure_id": str((getattr(world, "counsel_session", None) or {}).get("figure_id") or ""),
+            "figure_ids": list((getattr(world, "counsel_session", None) or {}).get("figure_ids") or []),
+            "mode": str((getattr(world, "counsel_session", None) or {}).get("mode") or ""),
+            "channel": str((getattr(world, "counsel_session", None) or {}).get("channel") or ""),
         },
         "counsel_prompt_chips": suggest_prompt_chips(world),
         "talkable_cast": _talkable_cast(world),
@@ -256,8 +319,16 @@ def _project(world: WorldState) -> dict[str, Any]:
     }
 
 
-def _world_from_ui(raw: dict[str, Any] | None) -> WorldState:
+def _world_from_ui(raw: dict[str, Any] | None, *, allow_fresh: bool = False) -> WorldState:
+    """Hydrate WorldState from a projected UI blob.
+
+    Mid-campaign blobs missing a usable ``_engine`` must NOT silently become
+    ``new_world()`` — that looks like Advance restarting the whole game.
+    Pass ``allow_fresh=False`` from mutate paths (Advance / Offensive / …).
+    """
     if not raw:
+        if not allow_fresh:
+            raise ValueError("campaign state missing — Restore last session or New Run")
         return new_world()
     eng = raw.get(_ENGINE_KEY)
     if isinstance(eng, dict) and eng.get("agents"):
@@ -273,6 +344,16 @@ def _world_from_ui(raw: dict[str, Any] | None) -> WorldState:
             if "alliance_fund_treasury" in raw:
                 world.alliance_fund_treasury = max(0.0, float(raw["alliance_fund_treasury"] or 0.0))
         return world
+    # Partial / projection-only payload — only invent a world for true cold start.
+    mid_campaign = False
+    try:
+        mid_campaign = int(raw.get("tick") or raw.get("quarter") or 0) > 0
+    except (TypeError, ValueError):
+        mid_campaign = False
+    if not allow_fresh or mid_campaign or (_ENGINE_KEY in raw):
+        raise ValueError(
+            "campaign engine missing or corrupt — Restore last session or New Run"
+        )
     world = new_world()
     if "qin_pressure" in raw:
         world.qin_pressure = float(raw["qin_pressure"])
@@ -317,7 +398,23 @@ def advance_quarter(raw: dict[str, Any] | None) -> tuple[dict[str, Any], list[di
     mark_opening_seen(world)
     before = len(world.episode)
     eng_tick(world)
-    return _project(world), _chat_from_new_logs(world, before)
+    projected = _project(world)
+    msgs = _chat_from_new_logs(world, before)
+    # Prefer the newest Chronicler line for the portrait dialogue plane
+    chron = next(
+        (
+            rec
+            for rec in reversed(world.episode[before:])
+            if rec.get("event_id") == "chronicle" and rec.get("text")
+        ),
+        None,
+    )
+    if chron:
+        projected["advance_dialogue"] = {
+            "speaker": "Chronicler",
+            "text": str(chron.get("text") or "")[:400],
+        }
+    return projected, msgs
 
 
 def intervene_chu(raw: dict[str, Any] | None) -> tuple[dict[str, Any], list[dict[str, str]]]:
@@ -350,6 +447,36 @@ def do_player_action(
     return _project(world), _chat_from_new_logs(world, before), err
 
 
+def do_player_offensive(
+    raw: dict[str, Any] | None,
+    attacker: str,
+    target: str,
+    allies: list[str] | None = None,
+    *,
+    bloc: str | None = None,
+) -> tuple[dict[str, Any], list[dict[str, str]], str | None]:
+    """Player Offensive — lead (+ allies/bloc) vs target; capacity + memory gated."""
+    world = _world_from_ui(raw)
+    before = len(world.episode)
+    eng_player_offensive(world, attacker, target, allies=allies, bloc=bloc)
+    err = getattr(world, "last_player_offensive_error", None)
+    return _project(world), _chat_from_new_logs(world, before), err
+
+
+def do_alliance_offensive(
+    raw: dict[str, Any] | None,
+    target: str,
+    *,
+    lead: str | None = None,
+) -> tuple[dict[str, Any], list[dict[str, str]], str | None]:
+    """Joint anti-Qin alliance offensive — members vs target; no counter-alliances."""
+    world = _world_from_ui(raw)
+    before = len(world.episode)
+    eng_alliance_offensive(world, target, lead=lead)
+    err = getattr(world, "last_player_offensive_error", None)
+    return _project(world), _chat_from_new_logs(world, before), err
+
+
 def attempt_alliance(
     raw: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], list[dict[str, str]], str | None]:
@@ -375,7 +502,11 @@ def spend_alliance_fund(
 
 
 def _talkable_cast(world: "WorldState") -> list[dict]:
-    """Compact picker rows: portrait + English name + talkable/era status."""
+    """Compact picker rows: portrait + English name + talkable/era status.
+
+    First row is always Atmosphere — broadcast counsel every living figure hears.
+    """
+    from engine.counsel import ATMOSPHERE_ID, living_figures
     from engine.figures import FIGURES, figure_cast_status, figure_label_for, get_figure
 
     short = {
@@ -388,7 +519,22 @@ def _talkable_cast(world: "WorldState") -> list[dict]:
         "li_si": "Li Si",
         "king_jian": "King Jian",
     }
-    out = []
+    living_n = len(living_figures(world))
+    out = [{
+        "id": ATMOSPHERE_ID,
+        "name": "Atmosphere",
+        "short": "Atmosphere",
+        "label": "General atmosphere",
+        "role_label": "Field pressure · all living courts hear",
+        "home": "",
+        "portrait": f"/static/portraits/{ATMOSPHERE_ID}.jpg",
+        "talkable": True,
+        "status": "atmosphere",
+        "note": f"Broadcast — {living_n} living figure(s) answer",
+        "era_unlock_bce": None,
+        "allegiance": "",
+        "atmosphere": True,
+    }]
     for fig in FIGURES:
         fid = fig["id"]
         st = figure_cast_status(world, fid)
@@ -399,11 +545,12 @@ def _talkable_cast(world: "WorldState") -> list[dict]:
             "label": figure_label_for(fid),
             "role_label": fig.get("role_label"),
             "home": fig.get("home"),
-            "portrait": f"/static/portraits/{fid}.svg",
+            "portrait": f"/static/portraits/{fid}.jpg",
             "talkable": bool(st.get("talkable")),
             "status": st.get("status"),
             "note": st.get("note") or "",
             "era_unlock_bce": fig.get("era_unlock_bce"),
+            "allegiance": fig.get("home"),
         })
     return out
 
@@ -434,7 +581,10 @@ def character_profile(raw: dict[str, Any] | None, agent_id: str) -> dict[str, An
 
     world = _world_from_ui(raw)
     fid = normalize_figure_id(agent_id)
-    return figure_profile(world, fid)
+    prof = figure_profile(world, fid)
+    if not prof.get("error"):
+        prof["prompt_chips"] = suggest_prompt_chips(world, figure_id=fid)
+    return prof
 
 
 def latest_dialogue(raw: dict[str, Any] | None) -> tuple[str, str]:
@@ -488,7 +638,9 @@ def export_snapshot(
     """Full WorldState JSON snapshot for Save / localStorage / file download."""
     import time
 
-    world = _world_from_ui(raw)
+    # Never let a broken in-memory blob export as a brand-new tick-0 campaign
+    # (that would wipe the browser session autosave after Advance).
+    world = _world_from_ui(raw, allow_fresh=True if not raw else False)
     eng = world.to_dict()
     return {
         "format": "warring-states-abm",
@@ -531,8 +683,9 @@ def run_counsel(
     *,
     commit: bool = False,
     figure_id: str | None = None,
+    figure_ids: list[str] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, str]], str | None, dict[str, Any]]:
-    """Player channel = collective consciousness; optional one-on-one via figure_id.
+    """Player channel = collective consciousness; private / circle / atmosphere.
 
     Free-text / chips fill the same prompt. Multi-turn closes by ~3–5 exchanges
     or commit; dial tips apply on close only. No player OCEAN / decision dossier.
@@ -546,16 +699,51 @@ def run_counsel(
         player_initiated=True,
         commit=bool(commit),
         figure_id=figure_id,
+        figure_ids=figure_ids,
     )
     err = None if result.get("ok") else (result.get("error") or "counsel failed")
     projected = _project(world)
+    rows = list(result.get("rows") or [])
+    focus = str(result.get("figure_id") or figure_id or "") or None
     projected["counsel_result"] = {
         "closed": bool(result.get("closed")),
+        "episode_closed": bool(result.get("episode_closed") or result.get("closed")),
+        "ready_for_new_episode": bool(
+            result.get("ready_for_new_episode")
+            or (result.get("closed") and result.get("ok"))
+        ),
         "exchange": result.get("exchange"),
         "exchanges_left": result.get("exchanges_left"),
         "mode": result.get("mode"),
-        "figure_id": result.get("figure_id") or figure_id,
+        "figure_id": focus,
+        "figure_ids": result.get("figure_ids") or figure_ids or [],
+        "channel": result.get("channel"),
+        "talk_mode": result.get("talk_mode"),
         "prompt_chips": result.get("prompt_chips") or suggest_prompt_chips(world),
-        "rows": result.get("rows") or [],
+        "rows": rows,
+        "tips": result.get("tips"),
+        "error": result.get("error"),
     }
-    return projected, _chat_from_new_logs(world, before), err, result
+    # Portrait dialogue box: private counsel never hits world.episode — surface focus reply here
+    talk_mode = str(result.get("talk_mode") or "")
+    focus_row = next(
+        (r for r in rows if str(r.get("figure_id") or "").lower() == str(focus or "").lower()),
+        rows[0] if rows else None,
+    )
+    if focus_row and focus_row.get("utterance"):
+        speaker = str(focus_row.get("figure_id") or focus or "Counsel")
+        if talk_mode == "atmosphere" or str(focus or "") == "atmosphere":
+            speaker = str(focus_row.get("figure_id") or "Atmosphere")
+        projected["counsel_dialogue"] = {
+            "speaker": speaker,
+            "text": str(focus_row.get("utterance") or "")[:280],
+        }
+    # FE chat stream also needs the spoken lines (episode stays private for sealed talk)
+    msgs = _chat_from_new_logs(world, before)
+    for row in rows:
+        u = str(row.get("utterance") or "").strip()
+        if not u:
+            continue
+        who = str(row.get("figure_id") or "Counsel")
+        msgs.append(_msg("assistant", f"**{who}** — {u}"))
+    return projected, msgs, err, result

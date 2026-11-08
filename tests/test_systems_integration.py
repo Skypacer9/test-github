@@ -73,6 +73,7 @@ def test_backend_projects_integration_fields():
     s0 = initial_state()
     for key in (
         "demographics",
+        "court_economy",
         "satisfaction",
         "available_manpower",
         "tech_coupling",
@@ -84,6 +85,14 @@ def test_backend_projects_integration_fields():
     ):
         assert key in s0, f"missing projection key {key}"
     assert s0["demographics"]["placeholder"] is True
+    assert s0["court_economy"]["placeholder"] is True
+    qin_eco = s0["court_economy"]["courts"]["qin"]
+    han_eco = s0["court_economy"]["courts"]["han"]
+    assert "production_power" in qin_eco
+    assert "manpower_regen_rate" in qin_eco
+    assert "manpower_delta_q" in qin_eco
+    # Larger extractive court should out-produce a thin corridor state
+    assert qin_eco["production_power"] > han_eco["production_power"]
     assert "nodes" in s0["m4"]
     assert "by_state" in s0["m4"]
     assert "tech_pressure_delta" in s0["tech_coupling"]

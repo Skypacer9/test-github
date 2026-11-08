@@ -139,9 +139,18 @@ def test_backend_projects_chronicle():
 
     s = initial_state()
     assert "chronicle_log" in s
-    s2, _ = advance_quarter(s)
+    s2, msgs = advance_quarter(s)
     assert "chronicle_log" in s2
     assert "chronicle_mode" in s2
+    # Every Advance is due — wry Chronicler line in projection + chat msgs
+    assert s2.get("chronicle_log"), "Advance must append chronicle when due"
+    assert any("Chronicler" in (m.get("content") or "") for m in msgs)
+    assert (s2.get("advance_dialogue") or {}).get("speaker") == "Chronicler"
+    assert (s2.get("advance_dialogue") or {}).get("text")
+    # Second Advance also writes (not buried / not skipped)
+    s3, msgs3 = advance_quarter(s2)
+    assert len(s3.get("chronicle_log") or []) >= 2
+    assert any("Chronicler" in (m.get("content") or "") for m in msgs3)
 
 
 def test_html_has_chronicle_panel():

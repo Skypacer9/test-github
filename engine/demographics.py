@@ -420,3 +420,92 @@ def field_demographics_summary(world: Any) -> dict[str, Any]:
         "courts": {cid: (board.courts.get(cid) or CourtDemographics()).to_dict() for cid in COURT_IDS},
         "rows": featured_rows,
     }
+
+
+def field_court_economy(world: Any) -> dict[str, Any]:
+    """Per-court production + manpower regen projections for Field dossier clicks.
+
+    Mirrors tick_resource_income / tick_demographics formulas without mutating
+    state — PLACEHOLDER rates, same honesty as the live meters.
+    """
+    from .nonlinear import clamp
+
+    board: DemographicsBoard = getattr(world, "demographics", None) or seed_demographics()
+    board.clamp()
+    famine = float(getattr(getattr(world, "world", None), "famine_shock", 0.0) or 0.0)
+    pressure = float(getattr(world, "qin_pressure", 0.0) or 0.0)
+    pressure01 = pressure / 100.0
+    # Match engine.conflict.VIABILITY_REGEN_CAP without circular import
+    viability_cap = 1.8
+    courts_out: dict[str, dict[str, Any]] = {}
+    for cid in COURT_IDS:
+        court = board.courts.get(cid) or CourtDemographics()
+        ag = (getattr(world, "agents", {}) or {}).get(cid)
+        y = float(getattr(ag, "geographic_yield", 0.6) if ag is not None else 0.6)
+        grain = float(getattr(ag, "grain", 60.0) if ag is not None else 60.0)
+        treasury = float(getattr(ag, "treasury", 60.0) if ag is not None else 60.0)
+        bloc = str(getattr(ag, "bloc", "anti_qin") if ag is not None else "anti_qin")
+        desperate = bool(getattr(ag, "desperate", False) if ag is not None else False)
+        annexed = bool(getattr(ag, "annexed", False) if ag is not None else False)
+
+        grain_in = 2.2 * y + (0.9 if cid == "chu" else 0.0)
+        treas_in = 2.0 * y + (1.0 if cid == "qin" else 0.0)
+        if bloc == "anti_qin":
+            grain_in -= 0.008 * pressure
+            treas_in -= 0.006 * pressure
+        grain_in -= 0.35
+        treas_in -= 0.30
+        if annexed:
+            grain_in = 0.0
+            treas_in = 0.0
+
+        # Manpower target + saturating regen (same form as tick_demographics)
+        target_mp = clamp(
+            0.55 * court.population
+            + 0.35 * court.levy_base
+            + 0.15 * court.satisfaction
+            - 0.18 * (famine ** 1.15)
+        )
+        gap = target_mp - court.available_manpower
+        regen_rate = 0.12 * (0.4 + 0.6 * abs(gap))
+        manpower_delta = regen_rate * gap
+
+        if desperate or annexed:
+            viability_regen = 0.0
+        else:
+            viability_regen = viability_cap * (
+                0.45 * y + 0.008 * max(0.0, grain - 40.0)
+            )
+            viability_regen = max(0.0, min(viability_cap, viability_regen))
+
+        production_power = max(0.0, grain_in) + max(0.0, treas_in)
+        courts_out[cid] = {
+            "geographic_yield": round(y, 4),
+            "grain_stock": round(grain, 2),
+            "treasury_stock": round(treasury, 2),
+            "grain_income_q": round(grain_in, 3),
+            "treasury_income_q": round(treas_in, 3),
+            "production_power": round(production_power, 3),
+            "rice_bonus": cid == "chu",
+            "fa_bonus": cid == "qin",
+            "pressure_tax": bloc == "anti_qin",
+            "manpower": round(float(court.available_manpower), 4),
+            "manpower_target": round(float(target_mp), 4),
+            "manpower_gap": round(float(gap), 4),
+            "manpower_regen_rate": round(float(regen_rate), 4),
+            "manpower_delta_q": round(float(manpower_delta), 5),
+            "viability_regen_q": round(float(viability_regen), 3),
+            "levy_extract": round(
+                float(court.levy_base) * float(court.available_manpower), 4
+            ),
+            "annexed": annexed,
+            "desperate": desperate,
+        }
+    return {
+        "placeholder": True,
+        "honesty": (
+            "PLACEHOLDER court flows — mirrors tick_resource_income / "
+            "tick_demographics without mutating; not calibrated GDP."
+        ),
+        "courts": courts_out,
+    }

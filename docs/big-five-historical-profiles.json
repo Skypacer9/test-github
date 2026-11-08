@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "title": "Big Five reconstructions for late Warring States historical figures/factions",
+    "disclaimer": "These are speculative psychometric reconstructions from transmitted historiography (esp. Shiji), not clinical assessments and not FFM self-report scores. Scores are design priors for a Grafted Persona engine. Confidence is low–medium by construction.",
+    "psychobiography_limits": "Secondary scholarship treats psychobiography as interpretive, not diagnostic: traits inferred from narrative sources inherit the narrator's agenda (Sima Qian's literary construction, moral patterning, later supplementation). Standard cautions—Runyan-style evidential triangulation, Elms on underdetermination, Costa/McCrae FFM as descriptive personality language rather than psychopathology—apply. Prefer specific juan/events over global character labels; mark UNKNOWN where the record is silent; never invent fictional persons as historical profiles.",
+    "scale": "Each Big Five trait in [0.0, 1.0]. O=Openness, C=Conscientiousness, E=Extraversion, A=Agreeableness, N=Neuroticism. Band guide: see big-five-score-meanings.md (~0.2 very low, ~0.5 average, ~0.8 very high for this engine).",
+    "window_focus": "c. 284–221 BCE scaffold; coalition crisis densest ~241–221",
+    "excluded": [
+      "Ling",
+      "Trauma Archaeologist",
+      "other design-fiction characters"
+    ],
+    "schema_fields": [
+      "id",
+      "name_zh",
+      "name_en",
+      "role",
+      "period_note",
+      "big_five",
+      "justifications",
+      "confidence",
+      "sources_hint",
+      "shiji_anchors"
+    ]
+  },
+  "profiles": [
+    {
+      "id": "chu-king-kaolie",
+      "name_zh": "楚考烈王（熊元）",
+      "name_en": "King Kaolie of Chu (Xiong Yuan)",
+      "role": "King of Chu; titular head of late Chu court during Chunshen ascendancy",
+      "period_note": "r. traditionally 262–238 BCE. Reign spans post–Ying-capital trauma (278) through Lord Chunshen's coalition diplomacy; dies before the final Qin–Chu wars. Engine window often starts near 241 with Kaolie still on the throne or as recent memory shaping Chu latency.",
+      "big_five": {
+        "O": 0.42,
+        "C": 0.48,
+        "E": 0.38,
+        "A": 0.62,
+        "N": 0.68
+      },
+      "justifications": {
+        "O": "Moderate-low Openness: Shiji 楚世家 / Four Lords context presents Kaolie as a king whose agency is mediated through Huang Xie rather than as an institutional innovator (contrast Shang Yang-style reform kings in 商君列傳). Chu joins anti-Qin coalitions under Chunshen's lead but does not pioneer Legalist reorganization. Speculative: receptivity to chancellor diplomacy ≠ paradigm-shifting O.",
+        "C": "Middling Conscientiousness: sustaining Chunshen's long tenure and authorizing multi-state campaigns (Handan-crisis aftermath: 楚使春申君及魏公子將兵數十萬攻秦軍 — 白起王翦列傳) shows follow-through via delegation. Chu's reputation for slow contribution and aristocratic drag (Political structures / plan response_latency) implies middling C under pressure, not high campaign logistics C.",
+        "E": "Lower Extraversion as public assertiveness: transmitted narrative centers Chunshen's networking (Celebrated Heroes name-level; Shiji coalition lead), not Kaolie as personally charismatic hegemon. Speculative inference from narrative centrality, not a physiognomic portrait.",
+        "A": "Elevated Agreeableness inside the court dyad: long favoritism / dependency on Chunshen reads as high interpersonal cooperativeness toward a preferred advisor. This is not peer-king coalition A—Kaolie A.62 vs Ying Zheng A.18 is a design contrast (trust-the-chancellor vs predatory low-A). Honesty: court favoritism can also reflect weak autonomy; A here is operationalized as dyadic cooperativeness, not warmth to rivals.",
+        "N": "Elevated Neuroticism / threat-sensitivity prior for the royal office after Bai Qi's capture of Ying (278): 拔郢，燒夷陵…楚王亡去郢，東走徙陳 (白起王翦列傳). Relentless Qin pressure + capital relocation eastward fit high fear/latency. Speculative: N indexes office-level threat response, not a clinical anxiety claim."
+      },
+      "confidence": "low",
+      "sources_hint": "Shiji 楚世家 + 白起王翦列傳 (Ying fall; Chunshen/Wei relief); Four Lords context; project plan Chu aristocratic factionalism / response_latency; Daoscape Political structures (historical scaffold only).",
+      "shiji_anchors": [
+        "vol073 白起王翦列傳: Bai Qi takes Ying / Chu flees to Chen (278 tradition)",
+        "vol073: 楚使春申君及魏公子將兵數十萬攻秦軍 (Handan-crisis coalition relief)",
+        "vol040 楚世家: late Chu court continuity under Kaolie (consult full juan beyond project excerpt)"
+      ]
+    },
+    {
+      "id": "chu-king-you",
+      "name_zh": "",
+      "name_en": "King You of Chu",
+      "role": "Chu sovereign (weak successor after Kaolie); late-era southern face",
+      "period_note": "Succeeds Kaolie ~238 BCE. Short, weak reign flavor — high neuroticism, low conscientiousness/extraversion; patronage web frays. English-only UI. Unlocks for talk when BCE year ≤ 238 (when Kaolie locks).",
+      "big_five": {
+        "O": 0.42,
+        "C": 0.28,
+        "E": 0.34,
+        "A": 0.48,
+        "N": 0.78
+      },
+      "justifications": {
+        "O": "Moderate-low Openness: inherits a syncretic court but without expansive appetite — follows received forms more than invents.",
+        "C": "Low Conscientiousness: weak reign flavor — levy discipline and ritual calendars slip; succession without Kaolie's hub gravity.",
+        "E": "Low Extraversion: quiet, dependent presence; court gravity moves to patrons and clients.",
+        "A": "Mid Agreeableness: leans on patronage reciprocity rather than hard fa; can be pulled by stronger brokers.",
+        "N": "High Neuroticism: brittle under Qin pressure and succession shock — fear and status threat color counsel."
+      },
+      "confidence": "scaffold",
+      "shiji_anchors": [
+        "Chu succession after Kaolie / weak late Chu royal face (scaffold)"
+      ]
+    },
+    {
+      "id": "chu-nobility-faction",
+      "name_zh": "楚贵族集团（聚合画像）",
+      "name_en": "Chu hereditary nobility faction (aggregate)",
+      "role": "Aggregate factional prior for old Chu aristocratic houses resisting status dilution",
+      "period_note": "Not a single person. Aggregate for late Chu court conservatives whose status_threat_sensitivity drives quiet withholding. Anchored in long Chu pattern of hereditary privilege (earlier Wu Qi murder by nobles is background memory, not a live agent).",
+      "big_five": {
+        "O": 0.28,
+        "C": 0.55,
+        "E": 0.45,
+        "A": 0.32,
+        "N": 0.72
+      },
+      "justifications": {
+        "O": "Low Openness: resists meritocratic outsiders and institutional experiments that would dilute lineage rank. Anchored in the historical asymmetry vs Qin's twenty ranks / military merit (Shang Yang reforms in 商君列傳; Daoscape sources-check Qin vs Chu promotion). Aggregate prior—no single named late-WS noble speech is required.",
+        "C": "Moderate–high Conscientiousness in defending estate, ritual precedence, and veto power over rapid mobilization—diligent about privilege maintenance, not about coalition logistics. Distinct from Chunshen's organizer C.",
+        "E": "Court-political Extraversion: factional networking inside Chu, not bold interstate leadership. Mid E as intra-court coalition capacity.",
+        "A": "Low Agreeableness toward coalition burdens that threaten relative standing; withholding is cheaper than open defection (asymmetric exit — plan / Cycles of Betrayal notes). Behavioral A = willingness to share costs with peer states/factions.",
+        "N": "High Neuroticism as status-threat vigilance: Qin pressure + fear of losing hereditary rank → hair-trigger resentment and betrayal_memory amplification. Design prior for status_threat_sensitivity, not a diagnosis of any named house."
+      },
+      "confidence": "low",
+      "sources_hint": "Plan variables status_threat_sensitivity / withholding; Daoscape sources-check on Qin vs Chu promotion asymmetry; Political structures Chu factionalism; treat as faction prior, not a named historical individual.",
+      "shiji_anchors": [
+        "vol068 商君列傳: Qin merit-rank contrast (background for Chu hereditary resistance)",
+        "Chu aristocratic drag as historiographical/game-scaffold pattern (Daoscape Political structures)—no single 241 BCE noble monologue in project Shiji pack"
+      ]
+    },
+    {
+      "id": "qi-king-jian-isolationist-court",
+      "name_zh": "齐王建（襄—建隔离主义廷统）",
+      "name_en": "King Jian of Qi (Xiang→Jian isolationist court framing)",
+      "role": "King of Qi in the late isolationist phase after Yan's 284 BCE trauma",
+      "period_note": "Clarify: Yue Yi / Yan invasion (284) shattered King Min (湣王). Restoration under King Xiang (襄王), then King Jian (王建) to 221. Her notes' 'post-Yan isolationism' is a court policy continuity across Xiang→Jian; for the ~241–221 engine window, profile King Jian as the acting sovereign, with Xiang-era recovery as memory_bias source. Shiji: Jian + chancellor Hou Sheng hold the western border and refuse Qin contact until Wang Ben takes Qi.",
+      "big_five": {
+        "O": 0.25,
+        "C": 0.4,
+        "E": 0.22,
+        "A": 0.35,
+        "N": 0.78
+      },
+      "justifications": {
+        "O": "Very low Openness to interstate institutional risk: wealth-as-shield, refuse coalition entanglement after Yan trauma. Endgame Shiji line is defensive closure, not alliance innovation.",
+        "C": "Passive defensive Conscientiousness (守其西界) without proactive multi-year coalition logistics—middling/low C for joint campaigns. Holding a border is C of a sort; organizing horizontal relief is not evidenced.",
+        "E": "Extreme withdrawal Extraversion: 不通秦 / isolationist foreign policy, minimal assertive diplomacy until conquest. Strongest low-E prior in the set.",
+        "A": "Surface 'non-aggression' is not coalition Agreeableness. Refusing aid while others burn = low cooperative A toward peer states; high self-preservation. Do not read quietness as kindness.",
+        "N": "Highest Neuroticism prior in the set: memory_bias from 284 catastrophe (plan Qi row); fear of being next; betrayal_memory overweight on any call to arms. Speculative amplification from trauma framing + endgame paralysis—Shiji does not give a clinical portrait."
+      },
+      "confidence": "low-medium",
+      "sources_hint": "Shiji 秦始皇本紀 endgame (齐王建 / 后胜 / 不通秦 / Wang Ben conquest); plan Qi row (post-284 isolationism, high betrayal_memory); Daoscape Political structures Qi isolationist foreign policy; Celebrated Heroes (Tian Jian isolationist).",
+      "shiji_anchors": [
+        "vol006 秦始皇本紀 二十六年: 齐王建與其相后胜發兵守其西界，不通秦。秦使將軍王賁從燕南攻齊，得齐王建"
+      ]
+    },
+    {
+      "id": "qin-zhaoxiang",
+      "name_zh": "",
+      "name_en": "King Zhaoxiang of Qin",
+      "role": "Qin sovereign (long reign); early-era face of Qin court before Ying Zheng",
+      "period_note": "Long reign spanning mid–late Warring States; expansive yet patient consolidation. Design prior for early sim years (before ~247 BCE Ying Zheng accession). English-only UI.",
+      "big_five": {
+        "O": 0.62,
+        "C": 0.9,
+        "E": 0.66,
+        "A": 0.36,
+        "N": 0.38
+      },
+      "justifications": {
+        "O": "Moderate-high Openness: decades of strategic expansion and guest talent without locking into a single orthodox form — expansive appetite balanced by patience.",
+        "C": "Very high Conscientiousness: long-reign durability, staged campaigns, stability-seeking administration — patience as policy.",
+        "E": "Solid Extraversion: ambitious court gravity and outward pressure without Zheng-level imperial theatricality.",
+        "A": "Lower Agreeableness: Qin expansion over banquet reciprocity; still less absolutist than First Emperor framing.",
+        "N": "Lower Neuroticism: steadier affect across a long reign — fewer panic pivots than high-N portrayals of late Qin apex."
+      },
+      "confidence": "scaffold",
+      "shiji_anchors": [
+        "Zhaoxiang long reign / Qin westward-eastward pressure (scaffold)"
+      ]
+    },
+    {
+      "id": "qin-ying-zheng",
+      "name_zh": "秦王政 / 秦始皇（嬴政）",
+      "name_en": "Ying Zheng (King of Qin → First Emperor)",
+      "role": "Qin sovereign; apex of Legalist war-and-admin apparatus",
+      "period_note": "King from 247/246 traditional accession; intensifies conquest ~230–221; emperor thereafter. Profile here for pre-unification decision style (bribery doctrine, sequential absorption, Li Xin vs Wang Jian Chu debate) with light post-221 institutional consistency (commandery system, reject enfeoffment).",
+      "big_five": {
+        "O": 0.7,
+        "C": 0.88,
+        "E": 0.72,
+        "A": 0.18,
+        "N": 0.6
+      },
+      "justifications": {
+        "O": "High strategic Openness to new imperial forms (counties/commanderies, standardization, guest talent like Li Si; reverses 逐客 after 《谏逐客书》) while closed to Zhou-style shared sovereignty—Openness here = institutional innovation for domination, not pluralist empathy. Wei Liao bribery doctrine (赂其豪臣) accepted as novel vertical-diplomacy tech.",
+        "C": "Very high Conscientiousness: multi-decade sequential conquest; insistence on scale after Li Xin fails—accepts Wang Jian's 六十萬 framing; admin follow-through (法令由一统, 书同文字). Shiji arcs are the strongest C evidence in the set.",
+        "E": "High dominance Extraversion / assertiveness (not warm affiliation): 自馳如頻陽 to recall Wang Jian; court control; Wei Liao physiognomic portrait stresses predatory presence (蜂準…豺聲). E = assertive dominance in engine terms.",
+        "A": "Very low Agreeableness: Wei Liao—少恩而虎狼心; Handan pit of maternal enemies (諸嘗與王生趙時母家有仇怨，皆阬之); 體解軻以徇 after Jing Ke; opportunistic bribery of rival grandees. Floor A.18 is a design prior for Defect/offensive default—not a claim of psychopathy.",
+        "N": "Moderate–high suspicious Neuroticism: Wang Jian's estate-begging anecdote frames a king who 怚而不信人; latent anxiety under absolute stake, not timid withdrawal. Distinct from Qi's freeze-N."
+      },
+      "confidence": "low-medium",
+      "sources_hint": "Shiji 秦始皇本紀 (Wei Liao; guest expulsion reversal; Jing Ke; Chu campaigns); 白起王翦列傳 (Li Xin 20万 vs Wang Jian 60万; estate requests); Legalist apparatus notes in Daoscape Character Briefs / unifying ideal.",
+      "shiji_anchors": [
+        "vol006: 尉繚…少恩而虎狼心…卒用其計策",
+        "vol006: 大索，逐客，李斯上書說，乃止逐客令",
+        "vol006: 秦王之邯鄲，諸嘗與王生趙時母家有仇怨，皆阬之",
+        "vol006: 體解軻以徇",
+        "vol006 / vol073: Li Xin 二十萬 fail → recall Wang Jian 六十萬; 秦王怚而不信人",
+        "vol006: reject enfeoffment — 廷尉議是 / 皆為郡縣"
+      ]
+    },
+    {
+      "id": "qin-li-si",
+      "name_zh": "李斯",
+      "name_en": "Li Si",
+      "role": "Chu-origin Legalist advisor → Qin chancellor; brain of administrative unification",
+      "period_note": "Active from late Zhuangxiang / early Zheng through empire. Separate from Ying Zheng: higher intellectual Openness and late-career anxiety; Agreeableness collapses under Sand Dunes (210 BCE)—use cautiously as post-221 cautionary trait evidence, not as a 241 BCE coalition event.",
+      "big_five": {
+        "O": 0.78,
+        "C": 0.82,
+        "E": 0.55,
+        "A": 0.28,
+        "N": 0.7
+      },
+      "justifications": {
+        "O": "High Openness: Xunzi training; rat parable (人之賢不肖譬如鼠矣，在所自處耳); sophisticated 《谏逐客书》 cosmopolitan argument; architect of documentary/legal standardization and anti-private-learning policy. Cognitive flexibility in service of power concentration—highest O in the set.",
+        "C": "High Conscientiousness in long project execution (espionage/bribery doctrine with Zheng; anti-enfeoffment memorial vs Wang Wan; decades to unification). Career discipline until Sand Dunes rupture.",
+        "E": "Mid Extraversion: persuasive memorialist and court operator, not battlefield charisma; effective dyadic influence on Zheng. Lower E than Chunshen/Zheng dominance E.",
+        "A": "Low Agreeableness toward rivals and norms of loyalty when survival/status threatened: engineers Han Fei's death in tradition (非死雲陽, with Li Si's counsel in 始皇本紀); at Sand Dunes yields to Zhao Gao after 仰天而歎，垂淚…安讬命哉—instrumental cooperation, not empathic coalition ethics. Distinct from Zheng's innate predatory low-A: Li Si's low-A is anxious-opportunistic.",
+        "N": "High Neuroticism especially late: banquet 物禁大盛 sigh; Sand Dunes weeping—status fear after peak power. Useful as advisor_fear parameter separate from royal dominance. Do not backdate Sand Dunes N as a 241 event card."
+      },
+      "confidence": "medium",
+      "sources_hint": "Shiji vol. 87 李斯列傳 (rat parable; leave Chu for Qin; Jian zhuke memorial; anti-enfeoffment; book ban; Sand Dunes); Daoscape Character Briefs Li Si spine; plan regime_talent_weight / Chu→Qin brain-drain dial.",
+      "shiji_anchors": [
+        "vol087: toilet/granary rat parable → leave Chu for Qin",
+        "vol087 / vol006: 《谏逐客书》 → stop guest expulsion",
+        "vol087: 物禁大盛 banquet sigh",
+        "vol087: Sand Dunes — 垂淚太息…安讬命哉 → yields to Zhao Gao",
+        "vol006: 韓非…非死雲陽 (Li Si counsel tradition)"
+      ]
+    },
+    {
+      "id": "chu-lord-chunshen",
+      "name_zh": "春申君黄歇",
+      "name_en": "Lord Chunshen (Huang Xie)",
+      "role": "Chu chancellor / one of the Four Lords; 241 BCE coalition organizer",
+      "period_note": "Peak influence under King Kaolie. Anchors: diplomatic hostage/career rise; joint action with Wei's Xinling to relieve pressure on Qin fronts; organizer role in the ~241 multi-state push against Qin. Later succession intrigue and murder (traditional 238) — ambition and court vulnerability. Primary 'cooperate harder' historical persona for Chu-led pathway search. Daoscape Celebrated Heroes lists name only—thicken from Shiji/Zhanguoce.",
+      "big_five": {
+        "O": 0.72,
+        "C": 0.75,
+        "E": 0.8,
+        "A": 0.58,
+        "N": 0.48
+      },
+      "justifications": {
+        "O": "High Openness to horizontal-alliance architecture and multi-state coordination—sees tianxia-scale coalition as actionable. Evidenced by joint command with Wei Xinling and Four Lords networking tradition; thicker biography lives in 春申君列傳 (vol078; not fully excerpted in project pack)—treat O as well-supported by role, medium-supported by quoted lines in this store.",
+        "C": "High Conscientiousness as long-serving organizer: sustained diplomacy, troop coordination with Wei leadership, repeated anti-Qin logistics (數十萬攻秦軍 episode in 白起王翦列傳).",
+        "E": "High Extraversion: classic Four Lords networking, persuasion, public coalition leadership—opposite of Qi isolationist withdrawal. Highest E in the set for Cooperate pull.",
+        "A": "Moderate–high coalition Agreeableness (builds from-alliances) tempered by self-interested fief/power accumulation and fatal succession meddling (traditional death 238)—cooperates for Chu+self, not pure altruism. A.58 vs Kaolie A.62: Kaolie's A is dyadic trust-of-chancellor; Chunshen's A is horizontal coalition-building with self-interest ceiling.",
+        "N": "Mid Neuroticism: operates under Qin threat without Qi-style freeze; later intrigue death suggests political risk-taking more than chronic avoidance. Speculative mid-band."
+      },
+      "confidence": "low-medium",
+      "sources_hint": "Shiji 白起王翦列傳 (Chunshen + Wei Xinling lead tens of myriads vs Qin); Four Lords tradition; project requirement for 241 coalition organizer; Daoscape Celebrated Heroes (name-level). Thicken with 春申君列傳 / Zhanguoce when available.",
+      "shiji_anchors": [
+        "vol073 白起王翦列傳: 楚使春申君及魏公子將兵數十萬攻秦軍，秦軍多失亡",
+        "vol078 春申君列傳 (full bio / succession intrigue — consult Wikisource; lightly represented in project excerpt pack)",
+        "始皇本紀 六年: 韓、魏、趙、衛、楚共擊秦 (multi-state push context near Kaolie/Chunshen era)"
+      ]
+    }
+  ]
+}

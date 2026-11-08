@@ -430,7 +430,8 @@ def figure_profile(world: "WorldState", figure_id: str) -> dict[str, Any]:
         "tick": world.tick,
         "era_status": figure_cast_status(world, figure_id),
         "talkable": figure_available_for_talk(world, figure_id),
-        "portrait": f"/static/portraits/{figure_id}.svg",
+        "portrait": f"/static/portraits/{figure_id}.jpg",
+        "allegiance": home,
         "bce_year": bce_year(world),
         "ideology": {
             "legalist_centralism": ag.traits.legalist_centralism,

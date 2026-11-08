@@ -1,0 +1,311 @@
+"""Player Offensive — attacker+target, capacity, soft cap, ally betrayal."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+_SIM = Path(__file__).resolve().parents[1]
+if str(_SIM) not in sys.path:
+    sys.path.insert(0, str(_SIM))
+
+from engine.conflict import offensive_capacity, resolve_attack
+from engine.tick import player_offensive, tick
+from engine.world import new_world
+
+
+def test_offensive_attacker_and_target_pickers():
+    w = new_world()
+    # Ensure Chu can afford a march
+    chu = w.agents["chu"]
+    chu.grain = 80
+    chu.treasury = 80
+    chu.viability = 90
+    before_trust = float(w.trust.get("chu->qin", 0.5))
+    player_offensive(w, "chu", "qin")
+    assert w.last_player_offensive_error is None, w.last_player_offensive_error
+    assert w.last_player_offensive
+    assert w.last_player_offensive.get("attacker") == "chu"
+    assert w.last_player_offensive.get("defender") == "qin"
+    assert int(w.player_offensive_actions_left) == 2
+    assert w.player_offensive_fronts.get("chu") == ["qin"]
+    # War chill
+    assert float(w.trust.get("chu->qin", 1.0)) < before_trust
+
+
+def test_offensive_ally_betrayal_spike():
+    w = new_world()
+    w.agents["chu"].grain = 80
+    w.agents["chu"].treasury = 80
+    w.agents["chu"].viability = 90
+    w.agents["qi"].grain = 70
+    w.agents["qi"].treasury = 70
+    betrayal0 = float(w.agents["qi"].state.betrayal_memory)
+    player_offensive(w, "chu", "qi")
+    assert w.last_player_offensive_error is None, w.last_player_offensive_error
+    assert float(w.agents["qi"].state.betrayal_memory) > betrayal0
+
+
+def test_offensive_soft_cap_and_capacity_refuse():
+    w = new_world()
+    # Drain Yan — weak court cannot open a front
+    yan = w.agents["yan"]
+    yan.grain = 3
+    yan.treasury = 3
+    yan.viability = 20
+    cap = offensive_capacity(w, "yan")
+    assert cap["can_launch"] is False
+    player_offensive(w, "yan", "zhao")
+    assert w.last_player_offensive_error
+    assert "capacity" in w.last_player_offensive_error.lower() or "lacks" in w.last_player_offensive_error.lower()
+
+    # Soft global cap 3 — three different pairs (also distinct targets)
+    w2 = new_world()
+    launches = (("chu", "qin"), ("qi", "zhao"), ("yan", "qi"))
+    for aid, tgt in launches:
+        for sid in (aid, tgt):
+            ag = w2.agents[sid]
+            ag.grain = 95
+            ag.treasury = 95
+            ag.viability = 95
+        player_offensive(w2, aid, tgt)
+        assert w2.last_player_offensive_error is None, (aid, tgt, w2.last_player_offensive_error)
+    assert int(w2.player_offensive_actions_left) == 0
+    # Fourth launch — budget spent (pair uniqueness already used distinct targets)
+    w2.agents["wei"].grain = 95
+    w2.agents["wei"].treasury = 95
+    w2.agents["wei"].viability = 95
+    player_offensive(w2, "wei", "han")
+    assert w2.last_player_offensive_error and "budget" in w2.last_player_offensive_error.lower()
+    # Advance refreshes soft cap + clears per-court fronts
+    tick(w2)
+    assert int(w2.player_offensive_actions_left) == 3
+    assert w2.player_offensive_fronts == {}
+
+
+def test_resolve_attack_force_scale_weakens():
+    w = new_world()
+    w.agents["chu"].grain = 80
+    w.agents["chu"].treasury = 80
+    full = resolve_attack(w, "chu", "qin", force_scale=1.0)
+    w2 = new_world()
+    w2.agents["chu"].grain = 80
+    w2.agents["chu"].treasury = 80
+    thin = resolve_attack(w2, "chu", "qin", force_scale=0.4)
+    assert full.get("cancelled") is False
+    assert thin.get("cancelled") is False
+    assert float(thin["atk_pow"]) < float(full["atk_pow"])
+
+
+def test_joint_offensive_shares_attrition_and_memory_hierarchy():
+    from engine.conflict import resolve_joint_attack
+    from engine.figure_memory import (
+        OFFENSIVE_SAL_ATTACKER,
+        OFFENSIVE_SAL_NEARBY,
+        OFFENSIVE_SAL_TARGET,
+        memories_for,
+        record_offensive,
+    )
+
+    w = new_world()
+    for sid in ("chu", "qi", "han"):
+        w.agents[sid].grain = 90
+        w.agents[sid].treasury = 90
+        w.agents[sid].viability = 90
+    chu_v0 = float(w.agents["chu"].viability)
+    qi_v0 = float(w.agents["qi"].viability)
+    qin_v0 = float(w.agents["qin"].viability)
+    res = resolve_joint_attack(w, ["chu", "qi"], "qin", force_scales={"chu": 1.0, "qi": 1.0})
+    assert res.get("cancelled") is False
+    assert res.get("joint") is True
+    assert set(res.get("attackers") or []) == {"chu", "qi"}
+    shares = res.get("contributions") or {}
+    assert set(shares) == {"chu", "qi"}
+    assert abs(sum(shares.values()) - 1.0) < 1e-6
+    # Both attackers take proportional exhaustion (or loss hit); target takes a hit either way
+    assert float(w.agents["chu"].viability) < chu_v0
+    assert float(w.agents["qi"].viability) < qi_v0
+    assert float(w.agents["qin"].viability) != qin_v0 or res.get("winner") == "qin"
+
+    stamps = record_offensive(w, attackers=["chu", "qi"], target="qin", winner=res.get("winner"))
+    assert stamps["target"] >= 1
+    assert stamps["attackers"] >= 1
+    # Salience hierarchy on stored rows
+    from engine.figures import FIGURES
+
+    def max_sal(home: str) -> float:
+        best = 0.0
+        for fig in FIGURES:
+            if fig.get("home") != home:
+                continue
+            for row in memories_for(w, fig["id"], limit=4):
+                if row.get("kind") == "offensive":
+                    best = max(best, float(row.get("salience") or 0))
+        return best
+
+    assert max_sal("qin") >= OFFENSIVE_SAL_TARGET - 0.01
+    assert max_sal("chu") >= OFFENSIVE_SAL_ATTACKER - 0.01
+    assert max_sal("chu") < OFFENSIVE_SAL_TARGET
+    # Nearby (e.g. wei/han) secondary if stamped
+    near = max(max_sal("han"), max_sal("wei"), max_sal("zhao"))
+    if stamps["nearby"] > 0:
+        assert near <= OFFENSIVE_SAL_NEARBY + 0.01
+        assert near < OFFENSIVE_SAL_ATTACKER
+
+
+def test_invest_and_fund_recover_viability():
+    from engine.tick import player_action, spend_alliance_fund
+
+    w = new_world()
+    w.agents["chu"].viability = 60.0
+    player_action(w, "send_grain", "chu")
+    assert w.last_player_action_error is None
+    assert float(w.agents["chu"].viability) >= 64.0
+
+    w2 = new_world()
+    w2.agents["qi"].viability = 55.0
+    w2.player_invest_actions_left = 1
+    player_action(w2, "fund_military", "qi")
+    assert w2.last_player_action_error is None
+    assert float(w2.agents["qi"].viability) >= 58.0
+
+    w3 = new_world()
+    for ag in w3.agents.values():
+        if ag.bloc == "anti_qin":
+            ag.viability = 50.0
+    w3.alliance_fund_grain = 40.0
+    w3.alliance_fund_treasury = 40.0
+    before = float(w3.agents["chu"].viability)
+    spend_alliance_fund(w3, "agriculture")
+    assert w3.last_alliance_fund_error is None
+    assert float(w3.agents["chu"].viability) > before
+
+
+def test_alliance_offensive_joint_per_court_fronts_no_counter():
+    from engine.tick import alliance_offensive, player_offensive
+
+    w = new_world()
+    for sid in ("chu", "qi", "zhao", "han", "wei", "yan"):
+        ag = w.agents[sid]
+        ag.grain = 95
+        ag.treasury = 95
+        ag.viability = 95
+        ag.intention.current = "cooperate"
+    t0 = float(w.trust.get("chu->qi", 0.5))
+    alliance_offensive(w, "qin", lead="chu")
+    assert w.last_player_offensive_error is None, w.last_player_offensive_error
+    res = w.last_player_offensive or {}
+    atks = list(res.get("attackers") or [])
+    assert len(atks) >= 2
+    assert "chu" in atks
+    # Each participant burned its OWN front quota (not only Chu)
+    fronts = w.player_offensive_fronts
+    for aid in atks:
+        assert "qin" in list(fronts.get(aid) or []), (aid, fronts)
+    after = res.get("fronts_after") or {}
+    for aid in atks:
+        assert "qin" in list(after.get(aid) or []), (aid, after)
+    # Joint activity mildly raises trust among participants
+    assert float(w.trust.get("chu->qi", 0.5)) > t0
+    assert int(res.get("joint_trust_edges") or 0) >= 1
+
+    # No Qin counter-alliance: multi-court with Qin lead refused
+    w2 = new_world()
+    w2.agents["qin"].grain = 95
+    w2.agents["qin"].treasury = 95
+    w2.agents["qin"].viability = 95
+    player_offensive(w2, "qin", "chu", allies=["qi"])
+    assert w2.last_player_offensive_error
+    assert "counter" in w2.last_player_offensive_error.lower()
+
+
+def test_alliance_fund_mediation_raises_trust():
+    from engine.tick import spend_alliance_fund
+
+    w = new_world()
+    w.alliance_fund_grain = 80.0
+    w.alliance_fund_treasury = 80.0
+    t0 = float(w.trust.get("chu->qi", 0.5))
+    spend_alliance_fund(w, "mediation")
+    assert w.last_alliance_fund_error is None, w.last_alliance_fund_error
+    assert "mediation" in w.alliance_fund_spent_purposes
+    assert float(w.trust.get("chu->qi", 0.5)) > t0
+
+
+def test_refuse_stacking_same_pair_and_target_front():
+    """One active front per attacker→target pair and per target — no Chu→Qin×3."""
+    w = new_world()
+    for sid in ("chu", "qi", "zhao"):
+        ag = w.agents[sid]
+        ag.grain = 95
+        ag.treasury = 95
+        ag.viability = 95
+    player_offensive(w, "chu", "qin")
+    assert w.last_player_offensive_error is None, w.last_player_offensive_error
+    assert w.player_offensive_fronts.get("chu") == ["qin"]
+    # Stack same pair — refuse
+    player_offensive(w, "chu", "qin")
+    assert w.last_player_offensive_error
+    assert "front already open" in w.last_player_offensive_error.lower() or "chu→qin" in w.last_player_offensive_error
+    # Same target from another adjacent court — refuse (one active front per target)
+    player_offensive(w, "zhao", "qin")
+    assert w.last_player_offensive_error
+    assert "active front" in w.last_player_offensive_error.lower()
+    # Different target still OK if capacity + adjacency remain
+    player_offensive(w, "chu", "han")
+    assert w.last_player_offensive_error is None, w.last_player_offensive_error
+    assert "han" in list(w.player_offensive_fronts.get("chu") or [])
+    # Advance clears fronts
+    tick(w)
+    assert w.player_offensive_fronts == {}
+    player_offensive(w, "chu", "qin")
+    assert w.last_player_offensive_error is None, w.last_player_offensive_error
+
+
+def test_withholding_barred_from_offensive_and_joint_fronts():
+    """Any withholding court (Qi or otherwise) cannot lead or join military fronts."""
+    from engine.tick import alliance_offensive
+
+    w = new_world()
+    for sid in ("chu", "qi", "zhao", "han", "wei", "yan"):
+        ag = w.agents[sid]
+        ag.grain = 95
+        ag.treasury = 95
+        ag.viability = 95
+        ag.intention.current = "cooperate"
+    w.agents["qi"].intention.current = "withhold"
+    cap = offensive_capacity(w, "qi")
+    assert cap["can_launch"] is False
+    assert cap["reason"] == "withholding"
+
+    player_offensive(w, "qi", "zhao")
+    assert w.last_player_offensive_error
+    assert "withhold" in w.last_player_offensive_error.lower()
+
+    # Joint: Qi withholding is dropped; Chu+Zhao still march
+    w2 = new_world()
+    for sid in ("chu", "qi", "zhao", "han", "wei", "yan"):
+        ag = w2.agents[sid]
+        ag.grain = 95
+        ag.treasury = 95
+        ag.viability = 95
+        ag.intention.current = "cooperate"
+    w2.agents["qi"].intention.current = "withhold"
+    player_offensive(w2, "chu", "qin", allies=["qi", "zhao"])
+    assert w2.last_player_offensive_error is None, w2.last_player_offensive_error
+    atks = list((w2.last_player_offensive or {}).get("attackers") or [])
+    assert "qi" not in atks
+    assert "chu" in atks
+    assert "zhao" in atks
+
+    # Alliance offensive excludes withholding from able pool
+    w3 = new_world()
+    for sid in ("chu", "qi", "zhao", "han", "wei", "yan"):
+        ag = w3.agents[sid]
+        ag.grain = 95
+        ag.treasury = 95
+        ag.viability = 95
+        ag.intention.current = "withhold"
+    alliance_offensive(w3, "qin", lead="chu")
+    assert w3.last_player_offensive_error
+    assert "front" in w3.last_player_offensive_error.lower() or "able" in w3.last_player_offensive_error.lower()

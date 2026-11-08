@@ -2,22 +2,39 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 120" role="img" aria-label="Ying Zheng">
   <defs>
     <linearGradient id="bg-ying_zheng" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#6a2010"/>
-      <stop offset="100%" stop-color="#0e0a06"/>
+      <stop offset="0%" stop-color="#5a1008"/>
+      <stop offset="100%" stop-color="#0a0604"/>
     </linearGradient>
     <linearGradient id="robe-ying_zheng" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#4a1810"/>
-      <stop offset="100%" stop-color="#6a2010"/>
+      <stop offset="0%" stop-color="#a03028"/>
+      <stop offset="100%" stop-color="#5a1008"/>
+    </linearGradient>
+    <linearGradient id="glow-ying_zheng" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4ecdc4" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#4ecdc4" stop-opacity="0"/>
     </linearGradient>
   </defs>
-  <rect width="96" height="120" rx="6" fill="url(#bg-ying_zheng)"/>
-  <rect x="3" y="3" width="90" height="114" rx="4" fill="none" stroke="#e0b85a" stroke-opacity="0.55" stroke-width="1.2"/>
-  <path d="M30 28 L36 18 L42 26 L48 16 L54 26 L60 18 L66 28" fill="none" stroke="#e0b85a" stroke-width="1.4" opacity="0.85"/>
-  <ellipse cx="48" cy="42" rx="18" ry="20" fill="#c9b59a"/>
-  <ellipse cx="48" cy="38" rx="18" ry="12" fill="#1a120c" opacity="0.85"/>
-  <path d="M18 108 C22 74, 30 64, 48 64 C66 64, 74 74, 78 108 Z" fill="url(#robe-ying_zheng)"/>
-  <path d="M48 64 L48 108" stroke="#e0b85a" stroke-width="1" opacity="0.35"/>
-  <path d="M34 70 Q48 80 62 70" fill="none" stroke="#e0b85a" stroke-width="1.5" opacity="0.7"/>
-  <rect x="6" y="96" width="84" height="18" rx="3" fill="rgba(0,0,0,0.55)"/>
-  <text x="48" y="109" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="9" fill="#e0b85a">Ying Zheng</text>
+  <rect width="96" height="120" rx="8" fill="url(#bg-ying_zheng)"/>
+  <rect x="4" y="4" width="88" height="112" rx="6" fill="none" stroke="#f0d070" stroke-opacity="0.65" stroke-width="1.6"/>
+  <rect x="7" y="7" width="82" height="106" rx="4" fill="none" stroke="#4ecdc4" stroke-opacity="0.28" stroke-width="1"/>
+  <ellipse cx="48" cy="28" rx="28" ry="14" fill="url(#glow-ying_zheng)"/>
+  
+  <path d="M30 32 C34 20, 62 20, 66 32" fill="#120c08"/>
+  <path d="M36 22 L48 12 L60 22" fill="none" stroke="#f0d070" stroke-width="1.6"/>
+  <circle cx="48" cy="14" r="2" fill="#4ecdc4"/>
+  <ellipse cx="48" cy="46" rx="17" ry="19" fill="#c4ae8a"/>
+  <ellipse cx="48" cy="40" rx="17" ry="11" fill="#120c08" opacity="0.92"/>
+  <path d="M38 39 Q42 37 46 39" fill="none" stroke="#2a1c14" stroke-width="1.3"/>
+  <path d="M50 39 Q54 37 58 39" fill="none" stroke="#2a1c14" stroke-width="1.3"/>
+  <circle cx="42" cy="44" r="1.6" fill="#1a120c"/>
+  <circle cx="54" cy="44" r="1.6" fill="#1a120c"/>
+  <circle cx="42.4" cy="43.6" r="0.45" fill="#f2e8d8"/>
+  <circle cx="54.4" cy="43.6" r="0.45" fill="#f2e8d8"/>
+  <path d="M42 54 Q48 58 54 54" fill="none" stroke="#6a4030" stroke-width="1.2"/>
+  <path d="M16 110 C22 72, 30 62, 48 62 C66 62, 74 72, 80 110 Z" fill="url(#robe-ying_zheng)"/>
+  <path d="M48 62 L48 110" stroke="#f0d070" stroke-width="1" opacity="0.35"/>
+  <path d="M34 70 Q48 82 62 70" fill="none" stroke="#f0d070" stroke-width="1.6" opacity="0.75"/>
+  <path d="M36 78 Q48 88 60 78" fill="none" stroke="#4ecdc4" stroke-width="1" opacity="0.45"/>
+  <rect x="8" y="96" width="80" height="16" rx="4" fill="rgba(0,0,0,0.58)"/>
+  <text x="48" y="107.5" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="9" fill="#f0d070">Ying Zheng</text>
 </svg>

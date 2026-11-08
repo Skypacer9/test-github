@@ -101,15 +101,23 @@ class WorldState:
     alliance_fund_log: list[str] = field(default_factory=list)
     # Last invest attempt error (None on success) — for Flask/CLI without parsing logs
     last_player_action_error: str | None = None
+    last_player_offensive_error: str | None = None
     last_alliance_fund_error: str | None = None
     last_alliance_attempt_error: str | None = None
     last_intervene_error: str | None = None
     # Demo play-feel: 1 invest + 1 Attempt Alliance + 1 Intervene;
+    # player offensives soft-cap 3/quarter; per-court fronts tracked separately
     # alliance fund: each purpose (tech/agri/build/mil) once per tick
     player_invest_actions_left: int = 1
     alliance_attempt_actions_left: int = 1
     intervene_actions_left: int = 1
+    player_offensive_actions_left: int = 3  # soft player-initiated cap ~2–3/quarter
+    # attacker → target ids opened this quarter (one active front per pair / per target)
+    player_offensive_fronts: dict[str, list[str]] = field(default_factory=dict)
+    last_player_offensive: dict[str, Any] | None = None
     alliance_fund_spent_purposes: list[str] = field(default_factory=list)
+    # Last successful quorum contributor ids — activity signal for joint-fund scale
+    alliance_last_contributors: list[str] = field(default_factory=list)
     # Run-start baselines + append-only per-event faction deltas (Field dashboard)
     faction_baseline: dict[str, dict[str, float]] = field(default_factory=dict)
     meso_baseline: dict[str, float] = field(default_factory=dict)
@@ -134,7 +142,7 @@ class WorldState:
     counsel_auto: bool = True
     counsel_mode: str = "stub"
     counsel_log: list[str] = field(default_factory=list)
-    counsel_actions_left: int = 1
+    counsel_actions_left: int = 6  # Speak→Decide episodes / quarter (soft cap)
     counsel_session: dict[str, Any] = field(default_factory=dict)  # ephemeral open talk only
     figure_beliefs: dict[str, dict[str, float]] = field(default_factory=dict)
     figure_breakthrough_at: dict[str, int] = field(default_factory=dict)
@@ -230,6 +238,14 @@ class WorldState:
         self.intervene_actions_left = max(
             0, min(1, int(getattr(self, "intervene_actions_left", 1)))
         )
+        self.player_offensive_actions_left = max(
+            0, min(3, int(getattr(self, "player_offensive_actions_left", 3)))
+        )
+        from .conflict import coerce_offensive_fronts
+
+        self.player_offensive_fronts = coerce_offensive_fronts(
+            getattr(self, "player_offensive_fronts", None)
+        )
         spent = getattr(self, "alliance_fund_spent_purposes", None) or []
         if not isinstance(spent, list):
             spent = list(spent)
@@ -324,7 +340,18 @@ class WorldState:
             "player_invest_actions_left": int(self.player_invest_actions_left),
             "alliance_attempt_actions_left": int(self.alliance_attempt_actions_left),
             "intervene_actions_left": int(self.intervene_actions_left),
+            "player_offensive_actions_left": int(self.player_offensive_actions_left),
+            "player_offensive_fronts": {
+                str(k): [str(t) for t in (v if isinstance(v, list) else [])]
+                for k, v in (self.player_offensive_fronts or {}).items()
+            },
+            "last_player_offensive": (
+                dict(self.last_player_offensive)
+                if isinstance(self.last_player_offensive, dict)
+                else None
+            ),
             "alliance_fund_spent_purposes": list(self.alliance_fund_spent_purposes),
+            "alliance_last_contributors": list(self.alliance_last_contributors or []),
             "faction_baseline": dict(self.faction_baseline),
             "meso_baseline": dict(self.meso_baseline),
             "faction_delta_log": list(self.faction_delta_log),
@@ -440,7 +467,24 @@ class WorldState:
                 if raw.get("intervene_actions_left") is not None
                 else 1
             ),
+            player_offensive_actions_left=int(
+                raw["player_offensive_actions_left"]
+                if raw.get("player_offensive_actions_left") is not None
+                else 3
+            ),
+            player_offensive_fronts=(
+                # deferred coerce in clamp(); keep raw then normalize
+                dict(raw.get("player_offensive_fronts") or {})
+            ),
+            last_player_offensive=(
+                dict(raw["last_player_offensive"])
+                if isinstance(raw.get("last_player_offensive"), dict)
+                else None
+            ),
             alliance_fund_spent_purposes=list(raw.get("alliance_fund_spent_purposes") or []),
+            alliance_last_contributors=[
+                str(x) for x in (raw.get("alliance_last_contributors") or [])
+            ],
             faction_baseline=dict(raw.get("faction_baseline") or {}),
             meso_baseline=dict(raw.get("meso_baseline") or {}),
             faction_delta_log=list(raw.get("faction_delta_log") or []),
@@ -460,7 +504,7 @@ class WorldState:
             counsel_mode=str(raw.get("counsel_mode") or "stub"),
             counsel_log=list(raw.get("counsel_log") or []),
             counsel_actions_left=int(
-                raw["counsel_actions_left"] if raw.get("counsel_actions_left") is not None else 1
+                raw["counsel_actions_left"] if raw.get("counsel_actions_left") is not None else 6
             ),
             counsel_session=dict(raw.get("counsel_session") or {}),
             figure_beliefs={

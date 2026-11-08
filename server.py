@@ -27,7 +27,9 @@ from backend import (
     bootstrap_dialogue,
     character_choices,
     character_profile,
+    do_alliance_offensive,
     do_player_action,
+    do_player_offensive,
     export_snapshot,
     fresh_run,
     import_snapshot,
@@ -45,7 +47,8 @@ SAVES = ROOT / "saves"
 PLAYERS_ROOT = SAVES / "players"
 
 # --- Resource / privacy bounds (override via env) ---
-MAX_CONTENT_LENGTH = int(os.environ.get("WS_MAX_CONTENT_LENGTH") or str(256 * 1024))
+# Campaign snapshots grow with episode/counsel logs; 256 KiB was wiping Restore mid-demo.
+MAX_CONTENT_LENGTH = int(os.environ.get("WS_MAX_CONTENT_LENGTH") or str(2 * 1024 * 1024))
 MAX_PLAYERS = int(os.environ.get("WS_MAX_PLAYERS") or "48")
 PLAYER_TTL_S = int(os.environ.get("WS_PLAYER_TTL_S") or str(2 * 60 * 60))
 MAX_SLOTS_PER_PLAYER = int(os.environ.get("WS_MAX_SLOTS") or "6")
@@ -58,13 +61,20 @@ JSON_MAX_DEPTH = int(os.environ.get("WS_JSON_MAX_DEPTH") or "24")
 
 
 def _cookie_secure_default() -> bool:
-    """Prefer Secure cookies; allow explicit override for plain-HTTP lab binds."""
+    """Secure cookies on HTTPS; off by default for plain-HTTP lab/demo binds.
+
+    Secure=1 on http://127.0.0.1 made some clients drop the session cookie → every
+    request minted a new player_id / CSRF → Advance looked like a full New Run.
+    """
     raw = (os.environ.get("WS_COOKIE_SECURE") or "").strip().lower()
     if raw in ("1", "true", "yes", "on"):
         return True
     if raw in ("0", "false", "no", "off"):
         return False
-    # Published Cursor apps are HTTPS; local loopback still accepts Secure in modern browsers.
+    host = (os.environ.get("WS_HOST") or "127.0.0.1").strip().lower()
+    if host in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
+        return False
+    # Published Cursor apps are HTTPS.
     return True
 
 
@@ -461,11 +471,41 @@ def _pack(
     }
 
 
+def _try_restore_session_into(b: dict[str, Any], pid: str) -> bool:
+    """Hydrate in-memory bucket from disk session before inventing a new campaign."""
+    for path in (_session_path(pid), _legacy_autosave(pid)):
+        snap = _read_snap_file(path) if path.exists() else None
+        if not isinstance(snap, dict):
+            continue
+        try:
+            projected = import_snapshot(snap)
+        except Exception:  # noqa: BLE001 — bad disk save; try next / fall through
+            continue
+        eng = projected.get("_engine") if isinstance(projected, dict) else None
+        if not isinstance(eng, dict) or not eng.get("agents"):
+            continue
+        chat: list[dict[str, str]] = []
+        if isinstance(snap.get("chat"), list) and snap["chat"]:
+            chat = list(snap["chat"])
+        else:
+            chat = bootstrap_dialogue()
+        b["state"] = projected
+        b["chat"] = chat
+        return True
+    return False
+
+
 def _ensure() -> dict[str, Any]:
     b = _bucket()
+    pid = session.get("player_id") or ""
     with _lock:
         st = b.get("state") or {}
-        if not st or "_engine" not in st:
+        eng = st.get("_engine") if isinstance(st, dict) else None
+        healthy = isinstance(eng, dict) and bool(eng.get("agents"))
+        if not healthy:
+            # Memory eviction / blank bucket: prefer disk session over silent New Run.
+            if pid and _try_restore_session_into(b, str(pid)):
+                return b["state"]
             st = fresh_run()
             b["state"] = st
             b["chat"] = bootstrap_dialogue()
@@ -716,8 +756,45 @@ def api_advance():
     if blocked:
         return blocked
     st = _ensure()
-    projected, msgs = advance_quarter(st)
-    return jsonify(_pack(projected, msgs))
+    before_tick = int((st.get("_engine") or {}).get("tick") or st.get("tick") or 0)
+    try:
+        projected, msgs = advance_quarter(st)
+    except ValueError as exc:
+        # Never invent a fresh campaign on Advance — surface restore guidance.
+        return jsonify({"ok": False, "error": str(exc), "csrf": session.get("csrf")}), 409
+    after_tick = int((projected.get("_engine") or {}).get("tick") or projected.get("tick") or 0)
+    if after_tick < before_tick:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": (
+                        f"advance refused reset (t{before_tick}→t{after_tick}) — "
+                        "Restore last session or New Run"
+                    ),
+                    "csrf": session.get("csrf"),
+                }
+            ),
+            409,
+        )
+    pack = _pack(projected, msgs)
+    # Portrait dialogue: show this quarter's Chronicler line (not buried auto-counsel)
+    adv_dlg = projected.get("advance_dialogue")
+    if isinstance(adv_dlg, dict) and adv_dlg.get("text"):
+        pack["dialogue"] = {
+            "speaker": str(adv_dlg.get("speaker") or "Chronicler"),
+            "text": str(adv_dlg.get("text") or ""),
+        }
+    # Persist immediately so memory eviction cannot turn the next Advance into New Run.
+    try:
+        pid = _player_id()
+        b = _bucket()
+        with _lock:
+            chat = list(b.get("chat") or [])
+        _write_session(pid, export_snapshot(projected, chat))
+    except Exception:  # noqa: BLE001 — autosave best-effort; Advance already applied
+        pass
+    return jsonify(pack)
 
 
 @app.post("/api/intervene")
@@ -761,7 +838,7 @@ def api_alliance():
 
 @app.post("/api/alliance_fund")
 def api_alliance_fund():
-    """Spend joint alliance fund: tech | agriculture | construction | military."""
+    """Spend joint alliance fund: tech | agriculture | construction | military | mediation."""
     blocked = _mutate_guard()
     if blocked:
         return blocked
@@ -769,11 +846,14 @@ def api_alliance_fund():
     body = request.get_json(silent=True) or {}
     purpose = str(body.get("purpose") or body.get("action") or "").strip().lower()
     allowed = {
-        "tech", "agriculture", "construction", "military",
+        "tech", "agriculture", "construction", "military", "mediation",
         "agri", "farm", "build", "mil", "army", "research", "m2", "infra", "arms",
+        "mediate", "broker", "broker_mediation",
     }
     if purpose not in allowed:
-        return jsonify({"ok": False, "error": "purpose must be tech|agriculture|construction|military"}), 400
+        return jsonify(
+            {"ok": False, "error": "purpose must be tech|agriculture|construction|military|mediation"}
+        ), 400
     before_g = float(st.get("alliance_fund_grain") or 0.0)
     before_t = float(st.get("alliance_fund_treasury") or 0.0)
     projected, msgs, err = spend_alliance_fund(st, purpose)
@@ -806,7 +886,7 @@ def _invest_response(action: str, target: str):
 
 @app.post("/api/player_action")
 def api_player_action():
-    """Fund Military / Send Grain / Broker Mediation — target an anti-Qin state."""
+    """Invest Tech|Agriculture|Construction|Military — target an anti-Qin state."""
     blocked = _mutate_guard()
     if blocked:
         return blocked
@@ -814,12 +894,87 @@ def api_player_action():
     action = str(body.get("action") or "").strip().lower()
     target = str(body.get("target") or "chu").strip().lower()
     allowed = {
+        "tech", "agriculture", "construction", "military", "mediation",
         "fund_military", "send_grain", "broker_mediation",
-        "fund", "grain", "mediate", "mediation", "broker", "military", "send",
+        "fund", "grain", "agri", "farm", "mediate", "broker",
+        "mil", "army", "arms", "send", "build", "infra", "research", "m2",
     }
     if action not in allowed:
-        return jsonify({"ok": False, "error": "action must be fund_military|send_grain|broker_mediation"}), 400
+        return jsonify(
+            {
+                "ok": False,
+                "error": "action must be tech|agriculture|construction|military|mediation",
+            }
+        ), 400
     return _invest_response(action, target)
+
+
+@app.post("/api/offensive")
+def api_offensive():
+    """Player Offensive — body: {attacker, target, allies?, bloc?}.
+
+    Soft cap 3/quarter. Joint force shares attrition ∝ contribution; target full hit.
+    Memory spikes: target > attackers > nearby.
+    No counter-alliances: multi-court marches are anti-Qin alliance only.
+    """
+    blocked = _mutate_guard()
+    if blocked:
+        return blocked
+    st = _ensure()
+    body = request.get_json(silent=True) or {}
+    attacker = str(body.get("attacker") or body.get("from") or body.get("lead") or "").strip().lower()
+    target = str(body.get("target") or body.get("to") or body.get("defender") or "").strip().lower()
+    raw_allies = body.get("allies") or body.get("with") or []
+    if isinstance(raw_allies, str):
+        raw_allies = [a.strip() for a in raw_allies.split(",") if a.strip()]
+    allies = [str(a).strip().lower() for a in (raw_allies or []) if str(a).strip()]
+    bloc = str(body.get("bloc") or "").strip().lower() or None
+    if not attacker or not target:
+        return jsonify({"ok": False, "error": "attacker and target required"}), 400
+    projected, msgs, err = do_player_offensive(
+        st, attacker, target, allies=allies, bloc=bloc
+    )
+    pack = _pack(projected, msgs)
+    pack["offensive"] = projected.get("last_player_offensive")
+    pack["player_offensive_actions_left"] = int(
+        projected.get("player_offensive_actions_left") or 0
+    )
+    pack["offensive_capacity"] = projected.get("offensive_capacity") or {}
+    if err:
+        pack["ok"] = False
+        pack["error"] = err
+        return jsonify(pack), 400
+    return jsonify(pack)
+
+
+@app.post("/api/alliance_offensive")
+def api_alliance_offensive():
+    """Joint anti-Qin alliance offensive — body: {target, lead?}.
+
+    Members (prefer active) march together; shared attrition + memory spikes.
+    No counter-alliances vs Chu/Qi hegemony.
+    """
+    blocked = _mutate_guard()
+    if blocked:
+        return blocked
+    st = _ensure()
+    body = request.get_json(silent=True) or {}
+    target = str(body.get("target") or body.get("to") or body.get("defender") or "").strip().lower()
+    lead = str(body.get("lead") or body.get("attacker") or "").strip().lower() or None
+    if not target:
+        return jsonify({"ok": False, "error": "target required"}), 400
+    projected, msgs, err = do_alliance_offensive(st, target, lead=lead)
+    pack = _pack(projected, msgs)
+    pack["offensive"] = projected.get("last_player_offensive")
+    pack["player_offensive_actions_left"] = int(
+        projected.get("player_offensive_actions_left") or 0
+    )
+    pack["offensive_capacity"] = projected.get("offensive_capacity") or {}
+    if err:
+        pack["ok"] = False
+        pack["error"] = err
+        return jsonify(pack), 400
+    return jsonify(pack)
 
 
 @app.post("/api/fund_military")
@@ -854,9 +1009,10 @@ def api_broker_mediation():
 
 @app.post("/api/counsel")
 def api_counsel():
-    """Counsel among figures or one-on-one via figure_id.
+    """Counsel: private one-on-one, circle (figure_ids), or atmosphere broadcast.
 
-    Body: { "prompt": "...", "commit": false, "figure_id": "zhaoxiang"|null }.
+    Body: { "prompt": "...", "commit": false, "figure_id": "zhaoxiang"|null,
+            "figure_ids": ["kaolie","chunshen"] }.
     Tips dials on close only. English UI. Defaults to offline stub.
     """
     blocked = _mutate_guard()
@@ -869,13 +1025,24 @@ def api_counsel():
     figure_id = body.get("figure_id") or body.get("figure") or None
     if figure_id is not None:
         figure_id = str(figure_id).strip().lower() or None
+    raw_ids = body.get("figure_ids") or body.get("figures") or None
+    figure_ids = None
+    if isinstance(raw_ids, (list, tuple)):
+        figure_ids = [str(x).strip().lower() for x in raw_ids if str(x).strip()]
     # LLM budget enforced inside counsel_llm/chronicle via admit_llm_call (same caps as tick).
     projected, msgs, err, result = run_counsel(
-        st, prompt=str(prompt), commit=commit, figure_id=figure_id
+        st, prompt=str(prompt), commit=commit, figure_id=figure_id, figure_ids=figure_ids
     )
     pack = _pack(projected, msgs)
     pack["counsel_result"] = projected.get("counsel_result") or result
     pack["talkable_cast"] = projected.get("talkable_cast")
+    # After Speak/Decide, portrait dialogue must show the focus figure — not stale Chronicler
+    dlg = projected.get("counsel_dialogue")
+    if isinstance(dlg, dict) and dlg.get("text"):
+        pack["dialogue"] = {
+            "speaker": str(dlg.get("speaker") or "Counsel"),
+            "text": str(dlg.get("text") or ""),
+        }
     if err:
         pack["ok"] = False
         pack["error"] = err
@@ -941,7 +1108,7 @@ def main() -> None:
     print(
         "API: /api/state /api/new /api/saves /api/save /api/load /api/advance /api/intervene /api/alliance "
         "/api/alliance_fund /api/player_action /api/fund_military /api/send_grain "
-        "/api/broker_mediation /api/profile /api/counsel /api/talkable"
+        "/api/broker_mediation /api/offensive /api/profile /api/counsel /api/talkable"
     )
     app.run(host=host, port=port, debug=False, use_reloader=False)
 

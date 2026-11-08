@@ -18,8 +18,13 @@ EVENT_KINDS = (
     "breakthrough",
     "rare_combo",
     "raid",
+    "offensive",
     "pattern",
 )
+# Offensive memory salience hierarchy (capped by remember() prune)
+OFFENSIVE_SAL_TARGET = 0.95   # strongest — court/figures being attacked
+OFFENSIVE_SAL_ATTACKER = 0.72  # lesser stamp on attacking courts
+OFFENSIVE_SAL_NEARBY = 0.48    # secondary — nearby allies / bystanders
 # Unusual-event counsel comment rarity (~22% when a fresh event is pending)
 COMMENT_FIRE_PCT = 22
 COMMENT_COOLDOWN = 2  # ticks between event comments per figure
@@ -145,7 +150,7 @@ def remember(
     pending = getattr(world, "figure_memory_pending", None)
     if not isinstance(pending, dict):
         pending = {}
-    if kind in ("annex", "betrayal", "ally_betrayal", "breakthrough", "rare_combo"):
+    if kind in ("annex", "betrayal", "ally_betrayal", "breakthrough", "rare_combo", "offensive", "raid"):
         pending[fid] = {"kind": kind, "text": str(text).strip()[:100], "tick": int(getattr(world, "tick", 0) or 0)}
     world.figure_memory_pending = pending
 
@@ -186,13 +191,21 @@ def memories_for(world: Any, fid: str, *, limit: int = 3) -> list[dict[str, Any]
     return out[:limit]
 
 
-def memory_bite(world: Any, fid: str) -> str:
-    """One short memory line for utterance shaping (may be empty)."""
-    rows = memories_for(world, fid, limit=2)
+def memory_bite(world: Any, fid: str, *, salt: tuple[Any, ...] | list[Any] | None = None) -> str:
+    """One short memory line for utterance shaping (may be empty).
+
+    Rotates among recent memories when salt (tick/speak) is provided so Speaks
+    do not lock onto the same prior forever.
+    """
+    rows = memories_for(world, fid, limit=4)
     if not rows:
         return ""
-    # Prefer in-run event over prior when present
-    pick = rows[0]
+    if salt is not None and len(rows) > 1:
+        h = hashlib.sha256("|".join(str(x) for x in (fid, *salt, "mbite")).encode()).hexdigest()
+        pick = rows[int(h[:8], 16) % len(rows)]
+    else:
+        # Prefer in-run event over prior when present
+        pick = rows[0]
     text = str(pick.get("text") or "").strip()
     if not text:
         return ""
@@ -214,6 +227,7 @@ def _role_event_comment(role: str, kind: str, detail: str) -> str:
             "breakthrough": f"A workshop flash — {short}.",
             "rare_combo": f"Strange doctrine sparks — {short}.",
             "raid": f"Raid weather: {short}.",
+            "offensive": f"Steel at the threshold — {short}. The seal remembers.",
             "pattern": f"I note the pattern: {short}.",
         },
         "minister": {
@@ -223,6 +237,7 @@ def _role_event_comment(role: str, kind: str, detail: str) -> str:
             "breakthrough": f"Tech flash noted — {short}.",
             "rare_combo": f"Unusual mix pays a crumb — {short}.",
             "raid": f"Raid math: {short}.",
+            "offensive": f"Offensive logged — {short}. Count the dead grain.",
             "pattern": f"Pattern brief: {short}.",
         },
         "general": {
@@ -232,6 +247,7 @@ def _role_event_comment(role: str, kind: str, detail: str) -> str:
             "breakthrough": f"New fittings — {short}.",
             "rare_combo": f"Odd doctrine at camp — {short}.",
             "raid": f"Raid call: {short}.",
+            "offensive": f"March weather — {short}. Fittings still ring.",
             "pattern": f"Camp sees the pattern: {short}.",
         },
         "retainer": {
@@ -241,6 +257,7 @@ def _role_event_comment(role: str, kind: str, detail: str) -> str:
             "breakthrough": f"Craft spark downstream — {short}.",
             "rare_combo": f"Strange court mix — {short}.",
             "raid": f"Raid rumor: {short}.",
+            "offensive": f"Spears near the spoke — {short}. We keep the debt.",
             "pattern": f"We feel the pattern: {short}.",
         },
     }
@@ -349,3 +366,76 @@ def record_rare_combo(world: Any, sid: str, combo: str) -> None:
 
 def record_pattern(world: Any, note: str, *, homes: set[str] | None = None) -> None:
     remember_living(world, kind="pattern", text=note[:100], salience=0.5, homes=homes)
+
+
+def record_offensive(
+    world: Any,
+    *,
+    attackers: list[str],
+    target: str,
+    winner: str | None = None,
+) -> dict[str, Any]:
+    """Large capped memory spikes after an Offensive.
+
+    Salience hierarchy (strongest → secondary):
+      1) target court/figures — OFFENSIVE_SAL_TARGET
+      2) attacking courts/figures — OFFENSIVE_SAL_ATTACKER (lesser)
+      3) nearby allies / bystander neighbors — OFFENSIVE_SAL_NEARBY
+    Pending flags let figures comment on a later Speak.
+    """
+    from .conflict import NEIGHBORS
+    from .figures import FIGURES, figure_available_for_talk
+
+    atk_ids = [str(a).strip().lower() for a in (attackers or []) if str(a).strip()]
+    tid = str(target or "").strip().lower()
+    if not atk_ids or not tid:
+        return {"target": 0, "attackers": 0, "nearby": 0}
+    names = {
+        sid: getattr(world.agents.get(sid), "name", None) or sid
+        for sid in set(atk_ids) | {tid}
+        if sid in (world.agents or {})
+    }
+    atk_label = "+".join(names.get(a, a) for a in atk_ids)
+    tname = names.get(tid, tid)
+    outcome = ""
+    if winner:
+        outcome = f" — {'defended' if winner == tid else 'pressed'}"
+    target_text = f"Offensive lands on {tname}: {atk_label} marched{outcome}"
+    attacker_text = f"We marched on {tname} ({atk_label}){outcome}"
+    nearby_text = f"Neighbor steel: {atk_label} → {tname}{outcome}"
+
+    counts = {"target": 0, "attackers": 0, "nearby": 0}
+    participant = set(atk_ids) | {tid}
+
+    def _stamp_home(home: str, text: str, salience: float, bucket: str) -> None:
+        for fig in FIGURES:
+            if fig.get("home") != home:
+                continue
+            fid = str(fig["id"])
+            if not figure_available_for_talk(world, fid):
+                continue
+            remember(world, fid, kind="offensive", text=text[:120], salience=salience)
+            counts[bucket] += 1
+
+    # 1) Target — strongest
+    if tid in world.agents and not getattr(world.agents[tid], "annexed", False):
+        _stamp_home(tid, target_text, OFFENSIVE_SAL_TARGET, "target")
+
+    # 2) Attackers — lesser stamp
+    for aid in atk_ids:
+        if aid in world.agents and not getattr(world.agents[aid], "annexed", False):
+            _stamp_home(aid, attacker_text, OFFENSIVE_SAL_ATTACKER, "attackers")
+
+    # 3) Nearby allies — neighbors of target or any attacker, not participants
+    nearby: set[str] = set()
+    for sid in participant:
+        for n in NEIGHBORS.get(sid, ()):
+            if n in participant:
+                continue
+            if n not in world.agents or getattr(world.agents[n], "annexed", False):
+                continue
+            nearby.add(n)
+    for nid in sorted(nearby):
+        _stamp_home(nid, nearby_text, OFFENSIVE_SAL_NEARBY, "nearby")
+
+    return counts

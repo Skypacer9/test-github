@@ -136,6 +136,76 @@ def test_multi_turn_forced_close_no_player_dossier():
     assert (w.counsel_session or {}).get("pressure", "") in ("", None)
 
 
+def test_speak_decide_many_episodes_per_quarter():
+    """Decide ends an episode; Speak may open another figure same quarter (soft cap)."""
+    from engine.counsel import COUNSEL_EPISODES_PER_QUARTER
+
+    w = new_world()
+    assert w.counsel_actions_left == COUNSEL_EPISODES_PER_QUARTER
+    r1 = run_counsel_round(
+        w, prompt="Grain?", force_stub=True, player_initiated=True, figure_id="kaolie"
+    )
+    assert r1["ok"] and not r1.get("closed")
+    d1 = run_counsel_round(
+        w,
+        prompt="Close counsel: accept the hedge and decide.",
+        force_stub=True,
+        player_initiated=True,
+        commit=True,
+        figure_id="kaolie",
+    )
+    assert d1["ok"] and d1.get("closed") and d1.get("ready_for_new_episode")
+    assert not (w.counsel_session or {}).get("open")
+    # Fresh episode with another figure — must not be budget-locked
+    r2 = run_counsel_round(
+        w, prompt="Qi markets?", force_stub=True, player_initiated=True, figure_id="king_jian"
+    )
+    assert r2["ok"] and not r2.get("closed"), r2.get("error")
+    d2 = run_counsel_round(
+        w,
+        prompt="Close counsel.",
+        force_stub=True,
+        player_initiated=True,
+        commit=True,
+        figure_id="king_jian",
+    )
+    assert d2["ok"] and d2.get("closed")
+    # Soft cap: exhaust remaining opens
+    w.counsel_actions_left = 0
+    blocked = run_counsel_round(
+        w, prompt="Again?", force_stub=True, player_initiated=True, figure_id="chunshen"
+    )
+    assert not blocked["ok"]
+    assert "soft cap" in (blocked.get("error") or "").lower()
+
+
+def test_decide_tips_focus_others_react():
+    w = new_world()
+    r = run_counsel_round(
+        w,
+        prompt="Hold the south.",
+        force_stub=True,
+        player_initiated=True,
+        figure_ids=["kaolie", "chunshen"],
+    )
+    assert r["ok"]
+    d = run_counsel_round(
+        w,
+        prompt="Close counsel: lean contribute.",
+        force_stub=True,
+        player_initiated=True,
+        commit=True,
+        figure_ids=["kaolie", "chunshen"],
+    )
+    assert d["ok"] and d.get("closed")
+    texts = [
+        (row.get("text") if isinstance(row, dict) else str(row))
+        for row in (w.counsel_log or [])
+    ]
+    assert any("DECISION kaolie" in t for t in texts)
+    assert any("REACT chunshen" in t for t in texts)
+
+
 def test_belief_cascade_caps():
     w = new_world()
     rows = [
@@ -233,8 +303,15 @@ def test_tick_wires_counsel():
 def test_chips_and_backend_projection():
     w = new_world()
     chips = suggest_prompt_chips(w)
-    assert 2 <= len(chips) <= 3
+    assert 1 <= len(chips) <= 2
     assert all("God" not in c and "god" not in c for c in chips)
+    assert all("Legalist haste" not in c for c in chips)
+    # Focus chips should match the figure's court, not a generic slogan
+    chu = suggest_prompt_chips(w, figure_id="chunshen")
+    assert 1 <= len(chu) <= 2
+    assert any("patron" in c.lower() or "broker" in c.lower() or "levy" in c.lower() or "spoke" in c.lower() or "receipt" in c.lower() for c in chu)
+    qin = suggest_prompt_chips(w, figure_id="zhaoxiang")
+    assert any("pressure" in c.lower() or "court" in c.lower() or "unity" in c.lower() or "people" in c.lower() for c in qin)
     s = initial_state()
     assert "counsel_log" in s and "counsel_prompt_chips" in s
     # No player ocean in projection
@@ -252,20 +329,39 @@ def test_flask_counsel_api():
     assert csrf
     r = c.post(
         "/api/counsel",
-        json={"prompt": "Among the courts: hold the south."},
+        json={"prompt": "Among the courts: hold the south.", "figure_id": "kaolie"},
         headers={"X-WS-CSRF": csrf},
     )
     j = r.get_json()
     assert r.status_code == 200 and j.get("ok")
     assert j.get("state") is not None
+    # Focus figure must surface in portrait dialogue after Speak
+    dlg = j.get("dialogue") or {}
+    cr = j.get("counsel_result") or {}
+    assert (cr.get("rows") or []) and cr["rows"][0].get("utterance")
+    assert dlg.get("speaker") == "kaolie"
+    assert dlg.get("text")
     csrf2 = j.get("csrf") or csrf
-    # Close
+    # Close → unlock new episode
     r2 = c.post(
         "/api/counsel",
-        json={"prompt": "Close counsel: lean contribute.", "commit": True},
+        json={"prompt": "Close counsel: lean contribute.", "commit": True, "figure_id": "kaolie"},
         headers={"X-WS-CSRF": csrf2},
     )
-    assert r2.status_code == 200 and r2.get_json().get("ok")
+    j2 = r2.get_json()
+    assert r2.status_code == 200 and j2.get("ok")
+    cr2 = j2.get("counsel_result") or {}
+    assert cr2.get("closed") and cr2.get("ready_for_new_episode")
+    csrf3 = j2.get("csrf") or csrf2
+    # Speak again same quarter with another figure
+    r3 = c.post(
+        "/api/counsel",
+        json={"prompt": "Qi — markets?", "figure_id": "king_jian"},
+        headers={"X-WS-CSRF": csrf3},
+    )
+    j3 = r3.get_json()
+    assert r3.status_code == 200 and j3.get("ok"), j3.get("error")
+    assert (j3.get("dialogue") or {}).get("speaker") == "king_jian"
 
 
 def test_flask_sessions_isolated():
