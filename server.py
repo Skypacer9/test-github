@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Flask HTML frontend for the Warring States sim — thin wrapper over backend.py.
 
-Per-browser cookie sessions isolate campaigns. Optional WS_ACCESS_TOKEN gates
-mutating APIs. LLM counsel/chronicle stay offline unless WS_LLM_ENABLED=1 and an
-API key is set, with per-session rate limits.
+Per-browser cookie sessions isolate campaigns. Bounded player/save quotas + TTL,
+request size caps, CSRF, optional WS_ACCESS_TOKEN. LLM stays hard-off unless
+explicitly gated (WS_LLM_ENABLED + key + access token or WS_LLM_ALLOW_ANON).
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import shutil
 import threading
 import time
 from copy import deepcopy
@@ -43,6 +44,30 @@ STATIC = ROOT / "static"
 SAVES = ROOT / "saves"
 PLAYERS_ROOT = SAVES / "players"
 
+# --- Resource / privacy bounds (override via env) ---
+MAX_CONTENT_LENGTH = int(os.environ.get("WS_MAX_CONTENT_LENGTH") or str(256 * 1024))
+MAX_PLAYERS = int(os.environ.get("WS_MAX_PLAYERS") or "48")
+PLAYER_TTL_S = int(os.environ.get("WS_PLAYER_TTL_S") or str(2 * 60 * 60))
+MAX_SLOTS_PER_PLAYER = int(os.environ.get("WS_MAX_SLOTS") or "6")
+MAX_PLAYER_DISK_BYTES = int(os.environ.get("WS_MAX_PLAYER_DISK") or str(384 * 1024))
+SESSION_CREATE_MAX_PER_MIN = int(os.environ.get("WS_SESSION_CREATE_MAX_PER_MIN") or "20")
+LLM_MAX_PER_HOUR = int(os.environ.get("WS_LLM_MAX_PER_HOUR") or "8")
+LLM_GLOBAL_MAX_PER_HOUR = int(os.environ.get("WS_LLM_GLOBAL_MAX_PER_HOUR") or "24")
+WRITE_MAX_PER_MIN = int(os.environ.get("WS_WRITE_MAX_PER_MIN") or "60")
+JSON_MAX_DEPTH = int(os.environ.get("WS_JSON_MAX_DEPTH") or "24")
+
+
+def _cookie_secure_default() -> bool:
+    """Prefer Secure cookies; allow explicit override for plain-HTTP lab binds."""
+    raw = (os.environ.get("WS_COOKIE_SECURE") or "").strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    # Published Cursor apps are HTTPS; local loopback still accepts Secure in modern browsers.
+    return True
+
+
 app = Flask(__name__, static_folder=str(STATIC), static_url_path="/static")
 app.secret_key = (
     os.environ.get("WS_SECRET_KEY")
@@ -53,20 +78,30 @@ app.config.update(
     SESSION_COOKIE_NAME="ws_field_session",
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    PERMANENT_SESSION_LIFETIME=timedelta(days=14),
+    SESSION_COOKIE_SECURE=_cookie_secure_default(),
+    PERMANENT_SESSION_LIFETIME=timedelta(seconds=max(300, PLAYER_TTL_S)),
+    MAX_CONTENT_LENGTH=MAX_CONTENT_LENGTH,
 )
 
 _lock = threading.RLock()
-# player_id -> {state, chat, llm_ts, write_ts}
+# player_id -> {state, chat, llm_ts, write_ts, touched, created}
 _players: dict[str, dict[str, Any]] = {}
+_global_llm_ts: list[float] = []
+_session_create_ts: list[float] = []
 
-LLM_MAX_PER_HOUR = int(os.environ.get("WS_LLM_MAX_PER_HOUR") or "8")
-WRITE_MAX_PER_MIN = int(os.environ.get("WS_WRITE_MAX_PER_MIN") or "90")
+
+def _access_token() -> str:
+    return (os.environ.get("WS_ACCESS_TOKEN") or "").strip()
 
 
 def _llm_enabled() -> bool:
-    flag = (os.environ.get("WS_LLM_ENABLED") or "").strip().lower()
-    if flag not in ("1", "true", "yes", "on"):
+    """LLM on when an API key is present unless WS_LLM_ENABLED explicitly disables it.
+
+    Demo default: keys ⇒ on. Set WS_LLM_ENABLED=0 to force stub. Global+session
+    rate limits still apply; UI shows third-party disclosure when enabled.
+    """
+    flag = (os.environ.get("WS_LLM_ENABLED") or "1").strip().lower()
+    if flag in ("0", "false", "no", "off"):
         return False
     key = (
         os.environ.get("WS_COUNSEL_API_KEY")
@@ -74,10 +109,6 @@ def _llm_enabled() -> bool:
         or ""
     ).strip()
     return bool(key)
-
-
-def _access_token() -> str:
-    return (os.environ.get("WS_ACCESS_TOKEN") or "").strip()
 
 
 def _safe_slot_id(name: str) -> str:
@@ -103,12 +134,74 @@ def _safe_slot_id(name: str) -> str:
     return sid
 
 
+def _prune_ts(rows: list[float], window_s: float) -> list[float]:
+    now = time.time()
+    return [t for t in rows if now - t < window_s]
+
+
+def _dir_size(path: Path) -> int:
+    total = 0
+    try:
+        for p in path.rglob("*"):
+            if p.is_file():
+                try:
+                    total += p.stat().st_size
+                except OSError:
+                    continue
+    except OSError:
+        return total
+    return total
+
+
+def _evict_players_locked(now: float | None = None) -> None:
+    """Drop TTL-expired buckets; if still over cap, drop least-recently touched."""
+    now = time.time() if now is None else now
+    expired = [
+        pid
+        for pid, b in _players.items()
+        if now - float(b.get("touched") or 0) > PLAYER_TTL_S
+    ]
+    for pid in expired:
+        _players.pop(pid, None)
+        # Best-effort disk cleanup for expired sessions
+        try:
+            d = PLAYERS_ROOT / "".join(ch for ch in pid if ch.isalnum() or ch in ("-", "_"))[:64]
+            if d.is_dir() and d.resolve().is_relative_to(PLAYERS_ROOT.resolve()):
+                shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            pass
+    while len(_players) > MAX_PLAYERS:
+        oldest_pid = min(_players.items(), key=lambda kv: float(kv[1].get("touched") or 0))[0]
+        _players.pop(oldest_pid, None)
+
+
+def _can_create_session_locked() -> str | None:
+    global _session_create_ts
+    _session_create_ts = _prune_ts(_session_create_ts, 60.0)
+    if len(_session_create_ts) >= max(1, SESSION_CREATE_MAX_PER_MIN):
+        return "server busy — too many new sessions; retry shortly"
+    if len(_players) >= MAX_PLAYERS:
+        _evict_players_locked()
+    if len(_players) >= MAX_PLAYERS:
+        return "server at capacity — try again later"
+    return None
+
+
 def _player_id() -> str:
     pid = session.get("player_id")
-    if not isinstance(pid, str) or len(pid) < 12:
-        pid = secrets.token_urlsafe(18)
+    creating = not (isinstance(pid, str) and len(pid) >= 12)
+    if creating:
+        with _lock:
+            err = _can_create_session_locked()
+            if err:
+                # Surface via session flag; callers check _session_admit_error
+                session["admit_error"] = err
+                return ""
+            pid = secrets.token_urlsafe(18)
+            _session_create_ts.append(time.time())
         session["player_id"] = pid
         session.permanent = True
+        session.pop("admit_error", None)
     if not session.get("csrf"):
         session["csrf"] = secrets.token_urlsafe(24)
     return pid
@@ -138,17 +231,44 @@ def _slot_path(pid: str, slot_id: str) -> Path:
 
 def _bucket() -> dict[str, Any]:
     pid = _player_id()
+    if not pid:
+        raise RuntimeError(session.get("admit_error") or "session capacity exceeded")
+    now = time.time()
     with _lock:
+        _evict_players_locked(now)
         b = _players.get(pid)
         if b is None:
-            b = {"state": {}, "chat": [], "llm_ts": [], "write_ts": []}
+            # Returning cookie after eviction — re-admit if capacity allows
+            err = _can_create_session_locked()
+            if err and len(_players) >= MAX_PLAYERS:
+                raise RuntimeError(err)
+            b = {
+                "state": {},
+                "chat": [],
+                "llm_ts": [],
+                "write_ts": [],
+                "touched": now,
+                "created": now,
+            }
             _players[pid] = b
+            _session_create_ts.append(now)
+        else:
+            b["touched"] = now
         return b
 
 
-def _prune_ts(rows: list[float], window_s: float) -> list[float]:
-    now = time.time()
-    return [t for t in rows if now - t < window_s]
+def _json_depth(obj: Any, *, depth: int = 0) -> int:
+    if depth > JSON_MAX_DEPTH:
+        return depth
+    if isinstance(obj, dict):
+        if not obj:
+            return depth
+        return max(_json_depth(v, depth=depth + 1) for v in obj.values())
+    if isinstance(obj, list):
+        if not obj:
+            return depth
+        return max(_json_depth(v, depth=depth + 1) for v in obj)
+    return depth
 
 
 def _rate_limit_writes(b: dict[str, Any]) -> str | None:
@@ -161,17 +281,39 @@ def _rate_limit_writes(b: dict[str, Any]) -> str | None:
 
 
 def _rate_limit_llm(b: dict[str, Any]) -> str | None:
+    """Per-session and global LLM caps (cost / abuse control)."""
+    global _global_llm_ts
     with _lock:
         b["llm_ts"] = _prune_ts(list(b.get("llm_ts") or []), 3600.0)
+        _global_llm_ts = _prune_ts(_global_llm_ts, 3600.0)
         if len(b["llm_ts"]) >= max(1, LLM_MAX_PER_HOUR):
             return "LLM rate limit — offline stub only for now"
-        b["llm_ts"].append(time.time())
+        if len(_global_llm_ts) >= max(1, LLM_GLOBAL_MAX_PER_HOUR):
+            return "global LLM budget exhausted — offline stub only"
+        now = time.time()
+        b["llm_ts"].append(now)
+        _global_llm_ts.append(now)
+    return None
+
+
+def _disk_quota_ok(pid: str, *, extra_bytes: int = 0, new_named_slot: bool = False) -> str | None:
+    root = _player_dir(pid)
+    slots = [p for p in root.glob("*.json") if p.stem not in ("session", "autosave")]
+    if new_named_slot and len(slots) >= MAX_SLOTS_PER_PLAYER:
+        return f"save slot limit ({MAX_SLOTS_PER_PLAYER}) reached"
+    if len(slots) > MAX_SLOTS_PER_PLAYER:
+        return f"save slot limit ({MAX_SLOTS_PER_PLAYER}) reached"
+    used = _dir_size(root)
+    if used + max(0, extra_bytes) > MAX_PLAYER_DISK_BYTES:
+        return "save disk quota exceeded for this session"
     return None
 
 
 def _auth_gate() -> tuple[bool, str | None]:
     """Private-app-safe gate: signed session always; optional shared access token."""
-    _player_id()  # ensure cookie session exists
+    pid = _player_id()
+    if not pid:
+        return False, session.get("admit_error") or "server at capacity"
     token = _access_token()
     if not token:
         return True, None
@@ -237,24 +379,41 @@ def _list_server_slots(pid: str) -> list[dict[str, Any]]:
     return rows
 
 
-def _write_session(pid: str, snap: dict[str, Any]) -> None:
+def _write_session(pid: str, snap: dict[str, Any]) -> str | None:
+    """Write autosave; returns error string if quota blocks the write."""
     try:
+        raw = json.dumps(snap, ensure_ascii=False)
         path = _session_path(pid)
+        existing = path.stat().st_size if path.exists() else 0
+        err = _disk_quota_ok(pid, extra_bytes=max(0, len(raw.encode("utf-8")) - existing))
+        if err:
+            return err
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
+        path.write_text(raw, encoding="utf-8")
     except OSError:
-        pass
+        return "save write failed"
+    return None
 
 
 def _write_named_slot(pid: str, name: str, snap: dict[str, Any]) -> dict[str, Any]:
-    """Write/overwrite one named slot file. Returns meta."""
+    """Write/overwrite one named slot file. Returns meta. Raises ValueError on quota."""
     sid = _safe_slot_id(name)
     snap = dict(snap)
     snap["slot_id"] = sid
     snap["slot_name"] = name.strip()
     path = _slot_path(pid, sid)
+    raw = json.dumps(snap, ensure_ascii=False)
+    existing = path.stat().st_size if path.exists() else 0
+    is_new = not path.exists()
+    err = _disk_quota_ok(
+        pid,
+        extra_bytes=max(0, len(raw.encode("utf-8")) - existing),
+        new_named_slot=is_new,
+    )
+    if err:
+        raise ValueError(err)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
+    path.write_text(raw, encoding="utf-8")
     return _snap_meta(snap, slot_id=sid, name=snap["slot_name"])
 
 
@@ -305,8 +464,8 @@ def _mutate_guard() -> tuple[Any, int] | None:
     """Shared gate for POST/write APIs. Returns Flask (response, status) on failure."""
     ok, err = _auth_gate()
     if not ok:
-        return jsonify({"ok": False, "error": err or "unauthorized"}), 401
-    _player_id()
+        code = 503 if err and ("capacity" in err or "busy" in err) else 401
+        return jsonify({"ok": False, "error": err or "unauthorized"}), code
     if not _csrf_ok():
         return (
             jsonify(
@@ -318,7 +477,10 @@ def _mutate_guard() -> tuple[Any, int] | None:
             ),
             403,
         )
-    b = _bucket()
+    try:
+        b = _bucket()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 503
     limited = _rate_limit_writes(b)
     if limited:
         return jsonify({"ok": False, "error": limited}), 429
@@ -334,6 +496,11 @@ def _touch_session():
         return None
     _player_id()
     return None
+
+
+@app.errorhandler(413)
+def _too_large(_err: Any):
+    return jsonify({"ok": False, "error": f"payload too large (max {MAX_CONTENT_LENGTH} bytes)"}), 413
 
 
 @app.get("/")
@@ -424,7 +591,9 @@ def api_save():
             return jsonify({"ok": False, "error": str(e)}), 400
         except OSError as e:
             return jsonify({"ok": False, "error": f"write failed: {e}"}), 500
-    _write_session(pid, snap)
+    sess_err = _write_session(pid, snap)
+    if sess_err and not meta:
+        return jsonify({"ok": False, "error": sess_err}), 400
     return jsonify(
         {
             "ok": True,
@@ -445,7 +614,13 @@ def api_load():
     if blocked:
         return blocked
     pid = _player_id()
+    # Bound body size even when Content-Length is missing/wrong
+    raw = request.get_data(cache=True, as_text=False) or b""
+    if len(raw) > MAX_CONTENT_LENGTH:
+        return jsonify({"ok": False, "error": f"payload too large (max {MAX_CONTENT_LENGTH} bytes)"}), 413
     body = request.get_json(silent=True) or {}
+    if _json_depth(body) > JSON_MAX_DEPTH:
+        return jsonify({"ok": False, "error": f"JSON too deeply nested (max depth {JSON_MAX_DEPTH})"}), 400
     snap = None
     slot_name = ""
     if isinstance(body, dict):
@@ -468,6 +643,8 @@ def api_load():
             snap = body
     if not isinstance(snap, dict):
         return jsonify({"ok": False, "error": "snapshot must be a JSON object"}), 400
+    if _json_depth(snap) > JSON_MAX_DEPTH:
+        return jsonify({"ok": False, "error": f"snapshot too deeply nested (max depth {JSON_MAX_DEPTH})"}), 400
     try:
         projected = import_snapshot(snap)
     except ValueError as e:

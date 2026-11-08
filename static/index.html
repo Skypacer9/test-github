@@ -670,6 +670,10 @@
         <div id="pane-dialogue" class="tab-pane active" role="tabpanel">
           <h2>Dialogue</h2>
           <p class="talk-hint" id="talk-hint">Tap a portrait to counsel. Era-locked faces stay dim.</p>
+          <p class="talk-hint" id="llm-privacy" hidden>
+            When counsel shows <strong>llm</strong>, your prompt and a field snapshot are sent to the
+            configured third-party model API (operator key). Offline <strong>stub</strong> keeps everything local.
+          </p>
           <div class="portrait-strip" id="talk-strip" role="listbox" aria-label="Talkable figures"></div>
           <div class="talk-empty" id="talk-empty">Choose someone to speak with.</div>
 
@@ -1244,6 +1248,11 @@ function renderProfile(prof) {
     function renderCounsel(s, data) {
       const mode = (s && s.counsel_mode) || (data && data.counsel_result && data.counsel_result.mode) || "stub";
       setText("counsel-mode", mode);
+      const priv = $("llm-privacy");
+      if (priv) {
+        const on = !!(data && data.llm_enabled) || mode === "llm";
+        priv.hidden = !on;
+      }
       const sess = (s && s.counsel_session) || {};
       const cr = (data && data.counsel_result) || {};
       const ex = cr.exchange != null ? cr.exchange : sess.exchanges;
@@ -1284,6 +1293,8 @@ function renderProfile(prof) {
 
     function applyPayload(data, freshCount) {
       if (data && data.csrf) csrfToken = data.csrf;
+      const priv = $("llm-privacy");
+      if (priv && data && data.llm_enabled) priv.hidden = false;
       const s = data.state || {};
       const agents = s.agents || {};
       setText("year", s.year ?? "—");
