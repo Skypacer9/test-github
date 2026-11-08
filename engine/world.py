@@ -134,7 +134,7 @@ class WorldState:
     counsel_auto: bool = True
     counsel_mode: str = "stub"
     counsel_log: list[str] = field(default_factory=list)
-    counsel_actions_left: int = 1
+    counsel_actions_left: int = 6  # Speak→Decide episodes / quarter (soft cap)
     counsel_session: dict[str, Any] = field(default_factory=dict)  # ephemeral open talk only
     figure_beliefs: dict[str, dict[str, float]] = field(default_factory=dict)
     figure_breakthrough_at: dict[str, int] = field(default_factory=dict)
@@ -460,7 +460,7 @@ class WorldState:
             counsel_mode=str(raw.get("counsel_mode") or "stub"),
             counsel_log=list(raw.get("counsel_log") or []),
             counsel_actions_left=int(
-                raw["counsel_actions_left"] if raw.get("counsel_actions_left") is not None else 1
+                raw["counsel_actions_left"] if raw.get("counsel_actions_left") is not None else 6
             ),
             counsel_session=dict(raw.get("counsel_session") or {}),
             figure_beliefs={

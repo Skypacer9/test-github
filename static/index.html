@@ -487,6 +487,11 @@
       letter-spacing: 0.02em;
     }
     .portrait-card:hover { border-color: var(--ws-electric); transform: translateY(-2px); }
+    .portrait-card.in-circle {
+      border-color: rgba(92,200,232,0.65);
+      box-shadow: 0 0 0 1px rgba(92,200,232,0.25);
+    }
+    .portrait-card.in-circle:not(.on) .pname { color: var(--ws-electric, #5cc8e8); }
     .portrait-card.on {
       border-color: var(--ws-electric);
       background:
@@ -1366,7 +1371,7 @@
 
         <div id="pane-dialogue" class="tab-pane active" role="tabpanel">
           <h2>Dialogue</h2>
-          <p class="talk-hint" id="talk-hint">Tap a face for private counsel · Atmosphere speaks to every living court · click bust for profile · locked faces stay dim.</p>
+          <p class="talk-hint" id="talk-hint">Tap a face · Ctrl/⌘-click adds circle listeners · Atmosphere = all living · Decide ends episode (Speak unlocks for another) · soft cap ~6/quarter.</p>
           <p class="talk-hint" id="llm-privacy" hidden>
             When counsel shows <strong>llm</strong>, your prompt and a field snapshot are sent to the
             configured third-party model API (operator key). Offline <strong>stub</strong> keeps everything local.
@@ -1454,6 +1459,7 @@
     const LS_LEGACY_KEY = "ws_abm_save_v1";
     let busy = false;
     let talkFigureId = null;
+    let talkCircleIds = []; // extras for circle Speak (focus = talkFigureId)
     let talkableCast = [];
     let selectedFigure = "kaolie";
     let profileLoadedOnce = false;
@@ -1952,14 +1958,32 @@
       }
       box.innerHTML = list.map((f) => portraitCardHtml(f, talkFigureId, "talk")).join("");
       box.querySelectorAll(".portrait-card").forEach((btn) => {
-        btn.addEventListener("click", () => {
+        const id = btn.dataset.id;
+        if (id && talkCircleIds.indexOf(id) >= 0 && id !== talkFigureId) {
+          btn.classList.add("in-circle");
+        }
+        btn.addEventListener("click", (ev) => {
           if (btn.classList.contains("locked") || btn.dataset.talkable === "false") {
             $("status") && ($("status").textContent = "Not yet risen or home annexed.");
             return;
           }
-          openTalk(btn.dataset.id);
+          const multi = !!(ev.metaKey || ev.ctrlKey);
+          openTalk(btn.dataset.id, { multi: multi });
         });
       });
+    }
+
+    function counselAudiencePayload() {
+      const focus = talkFigureId;
+      if (!focus) return null;
+      if (focus === "atmosphere") {
+        return { figure_id: "atmosphere", figure_ids: ["atmosphere"] };
+      }
+      const extras = (talkCircleIds || []).filter((id) => id && id !== focus && id !== "atmosphere");
+      if (extras.length) {
+        return { figure_id: focus, figure_ids: [focus].concat(extras) };
+      }
+      return { figure_id: focus, figure_ids: [focus] };
     }
 
     function paintChips(chips) {
@@ -1989,18 +2013,40 @@
       return "/static/portraits/" + String(fOrId || "kaolie") + ".jpg";
     }
 
-    async function openTalk(fid) {
+    async function openTalk(fid, opts) {
+      opts = opts || {};
       // Block cross-talk bleed: an open private session stays sealed to that figure.
       const openId = lastCounselSession && lastCounselSession.open ? (lastCounselSession.figure_id || "") : "";
       const openMode = (lastCounselSession && lastCounselSession.mode) || "";
-      if (openId && openMode === "private" && fid && fid !== openId) {
+      if (openId && openMode === "private" && fid && fid !== openId && !opts.multi) {
         if ($("status")) {
           $("status").textContent = "Private talk with " + openId + " is still open — Decide or Back before speaking to someone else.";
           $("status").classList.add("err");
         }
         fid = openId;
       }
+      // Ctrl/⌘-click: add/remove circle listener (focus stays talkFigureId)
+      if (opts.multi && fid && fid !== "atmosphere" && talkFigureId && talkFigureId !== "atmosphere") {
+        if (fid === talkFigureId) {
+          /* focus click with modifier — ignore */
+        } else if (talkCircleIds.indexOf(fid) >= 0) {
+          talkCircleIds = talkCircleIds.filter((x) => x !== fid);
+        } else {
+          talkCircleIds = talkCircleIds.concat([fid]).slice(0, 5);
+        }
+        renderTalkStrip(talkableCast);
+        const extras = talkCircleIds.filter((x) => x !== talkFigureId);
+        setText(
+          "talk-with-label",
+          extras.length
+            ? ("with circle · focus " + talkFigureId + " + " + extras.join(", "))
+            : ("with private · " + talkFigureId)
+        );
+        return;
+      }
       talkFigureId = fid;
+      if (fid === "atmosphere") talkCircleIds = [];
+      else talkCircleIds = (talkCircleIds || []).filter((x) => x !== fid);
       selectedFigure = fid;
       switchTab("dialogue");
       renderTalkStrip(talkableCast);
@@ -2011,7 +2057,15 @@
       if ($("counsel-prompt") && openId && fid === openId) { /* keep */ }
       else if ($("counsel-prompt") && (!openId || fid !== openId)) $("counsel-prompt").value = "";
       const isAtmo = fid === "atmosphere";
-      setText("talk-with-label", isAtmo ? "with the atmosphere (all living)" : ("with private · " + (fid || "—")));
+      const extras = (talkCircleIds || []).filter((x) => x && x !== fid);
+      setText(
+        "talk-with-label",
+        isAtmo
+          ? "with the atmosphere (all living)"
+          : (extras.length
+            ? ("with circle · focus " + fid + " + " + extras.join(", "))
+            : ("with private · " + (fid || "—")))
+      );
       const card = (talkableCast || []).find((f) => f.id === fid) || {
         id: fid,
         short: isAtmo ? "Atmosphere" : fid,
@@ -2076,6 +2130,7 @@
 
     function closeTalkPanel() {
       talkFigureId = null;
+      talkCircleIds = [];
       lastCounselSession = { open: false, figure_id: "", channel: "", mode: "" };
       if ($("counsel-log")) $("counsel-log").value = "";
       if ($("counsel-prompt")) $("counsel-prompt").value = "";
@@ -2303,24 +2358,44 @@ function renderProfile(prof) {
       const ex = cr.exchange != null ? cr.exchange : sess.exchanges;
       const cap = sess.cap || 5;
       const open = !!sess.open && !cr.closed;
+      const episodesLeft = Number(s && s.counsel_actions_left);
       lastCounselSession = {
         open: open,
         figure_id: String(sess.figure_id || cr.figure_id || ""),
         channel: String(sess.channel || cr.channel || ""),
         mode: String(sess.mode || cr.talk_mode || ""),
       };
-      setText("counsel-x", open ? ("x" + ex + "/" + cap) : (cr.closed ? "closed" : "idle"));
+      // After Decide: show idle + remaining episodes — never sticky "closed" lock
+      if (open) {
+        setText("counsel-x", "x" + ex + "/" + cap);
+      } else if (cr.episode_closed || cr.ready_for_new_episode || cr.closed) {
+        const leftLabel = Number.isFinite(episodesLeft) ? (episodesLeft + " left") : "ready";
+        setText("counsel-x", "idle · " + leftLabel);
+      } else {
+        setText("counsel-x", Number.isFinite(episodesLeft) ? ("idle · " + episodesLeft + " ep") : "idle");
+      }
       // Only snap the strip selection to the sealed open session — never to a stale result
       if (open && sess.figure_id && sess.mode === "private") {
         talkFigureId = sess.figure_id;
+        talkCircleIds = [];
+      } else if (open && sess.mode === "circle" && Array.isArray(sess.figure_ids) && sess.figure_ids.length) {
+        talkFigureId = sess.figure_id || sess.figure_ids[0];
+        talkCircleIds = sess.figure_ids.filter((id) => id !== talkFigureId);
       }
       if (talkFigureId) {
-        const talkMode = sess.mode || cr.talk_mode || "";
-        const label = talkMode === "atmosphere"
-          ? "the atmosphere (all living)"
-          : talkMode === "circle"
-            ? ("circle · " + ((sess.figure_ids || cr.figure_ids || []).join(", ") || talkFigureId))
-            : ("private · " + talkFigureId);
+        const talkMode = open ? (sess.mode || cr.talk_mode || "") : "";
+        const extras = (talkCircleIds || []).filter((x) => x && x !== talkFigureId);
+        let label;
+        if (talkMode === "atmosphere" || talkFigureId === "atmosphere") {
+          label = "the atmosphere (all living)";
+        } else if (talkMode === "circle" || extras.length) {
+          const ids = open && sess.figure_ids && sess.figure_ids.length
+            ? sess.figure_ids
+            : [talkFigureId].concat(extras);
+          label = "circle · focus " + (ids[0] || talkFigureId) + (ids.length > 1 ? (" + " + ids.slice(1).join(", ")) : "");
+        } else {
+          label = "private · " + talkFigureId;
+        }
         setText("talk-with-label", "with " + label);
       }
       const ta = $("counsel-log");
@@ -2332,14 +2407,34 @@ function renderProfile(prof) {
           if (typeof row === "object") return String(row.text || row.utterance || "");
           return String(row);
         }).filter(Boolean);
-        // Also surface latest reply rows immediately (in case log lag)
+        // Surface latest reply rows immediately (log can lag / channel filter)
         const rows = cr.rows || [];
         rows.forEach((r) => {
-          const u = r && r.utterance;
-          if (u && !lines.includes(u)) lines.push(u);
+          if (!r) return;
+          const u = String(r.utterance || "").trim();
+          if (!u) return;
+          const who = String(r.figure_id || "Counsel");
+          const line = who + ": " + u;
+          if (!lines.some((x) => x.indexOf(u) >= 0)) lines.push(line);
         });
         ta.value = lines.join("\n");
         ta.scrollTop = ta.scrollHeight;
+      }
+      // Portrait dialogue plane — focus figure must speak after Speak/Decide
+      const rows = cr.rows || [];
+      const focusId = String(cr.figure_id || sess.figure_id || talkFigureId || "");
+      let focusRow = rows.find((r) => String((r && r.figure_id) || "").toLowerCase() === focusId.toLowerCase());
+      if (!focusRow && rows.length) focusRow = rows[0];
+      if (focusRow && focusRow.utterance) {
+        setText("dlg-speaker", focusRow.figure_id || focusId || "Counsel");
+        setText("dlg-line", String(focusRow.utterance));
+      } else if (data && data.dialogue && data.dialogue.text && (open || cr.closed)) {
+        // Fallback if rows missing but server packed counsel_dialogue into dialogue
+        if (cr.rows && cr.rows.length === 0) { /* keep */ }
+        else if (data.dialogue.speaker && data.dialogue.speaker !== "Chronicler") {
+          setText("dlg-speaker", data.dialogue.speaker);
+          setText("dlg-line", data.dialogue.text);
+        }
       }
       const chips = (cr.prompt_chips) || (s && s.counsel_prompt_chips) || [];
       // Never let closing slogans replace live pressure chips
@@ -2824,24 +2919,45 @@ function renderProfile(prof) {
 
     $("btn-counsel").onclick = () => {
       const prompt = ($("counsel-prompt") && $("counsel-prompt").value) || "";
-      if (!talkFigureId) {
+      const aud = counselAudiencePayload();
+      if (!aud) {
         $("status").textContent = "Pick a figure from the portrait strip first.";
         $("status").classList.add("err");
         return;
       }
       run("Counsel", () => api("/api/counsel", {
         method: "POST",
-        body: JSON.stringify({ prompt, commit: false, figure_id: talkFigureId }),
+        body: JSON.stringify({
+          prompt,
+          commit: false,
+          figure_id: aud.figure_id,
+          figure_ids: aud.figure_ids,
+        }),
       }));
     };
     $("btn-counsel-close").onclick = () => {
       const prompt = ($("counsel-prompt") && $("counsel-prompt").value) || "Close counsel: accept the hedge and decide.";
+      const aud = counselAudiencePayload();
       run("Counsel close", async () => {
         const data = await api("/api/counsel", {
           method: "POST",
-          body: JSON.stringify({ prompt, commit: true, figure_id: talkFigureId }),
+          body: JSON.stringify({
+            prompt,
+            commit: true,
+            figure_id: aud ? aud.figure_id : talkFigureId,
+            figure_ids: aud ? aud.figure_ids : (talkFigureId ? [talkFigureId] : undefined),
+          }),
         });
         if ($("counsel-prompt")) $("counsel-prompt").value = "";
+        const cr = data && data.counsel_result;
+        if (cr && (cr.episode_closed || cr.closed || cr.ready_for_new_episode)) {
+          lastCounselSession = { open: false, figure_id: "", channel: "", mode: "" };
+          const left = (data.state && data.state.counsel_actions_left);
+          showToast(
+            "Episode closed · Speak again with another figure"
+            + (left != null ? (" (" + left + " left this quarter)") : "")
+          );
+        }
         return data;
       });
     };

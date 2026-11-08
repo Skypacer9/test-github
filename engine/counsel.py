@@ -54,6 +54,8 @@ TRUST_FLIP_CAP = 0.08
 TECH_KNOWN_BUMP = 0.05
 DIALOGUE_MIN = 3
 DIALOGUE_MAX = 5
+# Soft cap: Speak→Decide episodes per quarter (Advance refreshes).
+COUNSEL_EPISODES_PER_QUARTER = 6
 
 # Ideology/culture-gated dialogue seeds (Odetta).
 # Soft priors: vault English notes + period-text paraphrases (Guodian/Dao patronage,
@@ -1636,38 +1638,72 @@ def _apply_close(
     *,
     audience: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Apply dial tips + cascade/breakthrough on close; wipe session pressure (no dossier)."""
+    """Decide ends the episode: tip the focus figure's dials; others may react lightly.
+
+    Then wipe the session so Speak can open a fresh episode (same quarter OK).
+    """
     aud = audience or resolve_audience(world)
     channel = str(aud.get("channel") or "among_courts")
     private = bool(aud.get("private"))
-    tips = apply_counsel_tips(world, rows)
-    belief = apply_belief_seeds(world, rows)
-    breakthrough = apply_breakthrough(world, rows)
+    focus = str(aud.get("figure_id") or "") or None
+    tip_rows: list[dict[str, Any]] = []
+    react_rows: list[dict[str, Any]] = []
+    for row in rows:
+        fid = str(row.get("figure_id") or "").lower()
+        if focus and fid == focus.lower():
+            tip_rows.append(row)
+        else:
+            # Reactions: keep voice, do not hard-tip dials
+            soft = dict(row)
+            soft["loyalty_shift"] = 0.0
+            if soft.get("stance_lean") in STANCE_HARD:
+                soft["stance_lean"] = "hedge"
+            soft["belief_seed"] = None
+            soft["breakthrough"] = None
+            react_rows.append(soft)
+    if not tip_rows and rows:
+        tip_rows = [rows[0]]
+        react_rows = [
+            {**r, "loyalty_shift": 0.0, "belief_seed": None, "breakthrough": None}
+            for r in rows[1:]
+        ]
+    tips = apply_counsel_tips(world, tip_rows)
+    belief = apply_belief_seeds(world, tip_rows)
+    breakthrough = apply_breakthrough(world, tip_rows)
     world.counsel_mode = mode
     world.last_counsel_tips = tips
-    for row in rows:
+    for row in tip_rows:
         line = (
             f"[t={world.tick}] DECISION {row['figure_id']}@{row['home']} "
             f"{row['stance_lean']} Δloy={row['loyalty_shift']:+.2f} "
             f"[{row['event_tag']}] {row['utterance']}"
         )
         _log(world, line, channel=channel)
-        # Private 1:1 stays off the public quarterly episode
         if not private:
             world.append_log(line, event_id="counsel", actor=str(row["figure_id"]), action="decision")
+    for row in react_rows:
+        line = (
+            f"[t={world.tick}] REACT {row['figure_id']}@{row['home']} "
+            f"[{row.get('event_tag') or 'other'}] {row.get('utterance') or ''}"
+        )
+        _log(world, line, channel=channel)
+        if not private:
+            world.append_log(line, event_id="counsel", actor=str(row["figure_id"]), action="react")
     _log(
         world,
-        f"[t={world.tick}] counsel_closed mode={mode} channel={channel} n={len(rows)}"
+        f"[t={world.tick}] counsel_closed mode={mode} channel={channel} "
+        f"focus={focus or '—'} tips={len(tip_rows)} react={len(react_rows)}"
         + (f" ({err})" if err else ""),
         channel=channel,
     )
-    focus = str(aud.get("figure_id") or "") or None
-    clear_counsel_session(world)  # wipe ephemeral pressure text — no player memory
+    # Wipe episode — next Speak opens a new private/circle/atmosphere round
+    clear_counsel_session(world)
+    out_rows = tip_rows + react_rows
     return {
         "ok": True,
         "mode": mode,
         "closed": True,
-        "rows": rows,
+        "rows": out_rows,
         "tips": tips,
         "applied_belief": belief or None,
         "applied_breakthrough": breakthrough or None,
@@ -1679,6 +1715,8 @@ def _apply_close(
         "channel": channel,
         "talk_mode": aud.get("mode"),
         "error": err,
+        "episode_closed": True,
+        "ready_for_new_episode": True,
     }
 
 
@@ -1706,13 +1744,30 @@ def run_counsel_round(
         )
         return _apply_close(world, rows, mode, err, None, audience=aud)
 
-    # Player dialogue — private 1:1, circle (several), or atmosphere broadcast
-    left = int(getattr(world, "counsel_actions_left", 1))
+    # Player dialogue — private 1:1, circle (several), or atmosphere broadcast.
+    # Within one quarter the player may Speak+Decide many episodes in sequence
+    # (each Decide tips that episode's focus figure). Decide ends the episode and
+    # clears the session so the next Speak opens a fresh round — not one-per-tick.
     sess = _ensure_session(world)
     ids_in = _norm_ids(figure_ids) or _norm_ids([figure_id] if figure_id else [])
     if not ids_in and sess.get("open"):
         ids_in = _norm_ids(sess.get("figure_ids")) or _norm_ids([sess.get("figure_id")])
-    aud = resolve_audience(world, figure_id=(ids_in[0] if len(ids_in) == 1 else figure_id), figure_ids=ids_in)
+    # First id is focus (dial tips on Decide); extras are circle listeners/reactors
+    aud = resolve_audience(
+        world,
+        figure_id=(ids_in[0] if ids_in else figure_id),
+        figure_ids=ids_in if len(ids_in) >= 2 else (ids_in or None),
+    )
+    # Preserve caller focus order: first selected figure is the tip target
+    if ids_in and aud.get("mode") == "circle":
+        focus_keep = ids_in[0]
+        figs_by = {f["id"]: f for f in (aud.get("figs") or [])}
+        ordered = [figs_by[i] for i in ids_in if i in figs_by]
+        if ordered:
+            aud = dict(aud)
+            aud["figure_id"] = focus_keep if focus_keep in figs_by else ordered[0]["id"]
+            aud["figure_ids"] = [f["id"] for f in ordered]
+            aud["figs"] = ordered
     focus = str(aud.get("figure_id") or "") or None
     channel = str(aud.get("channel") or "among_courts")
 
@@ -1730,13 +1785,24 @@ def run_counsel_round(
         }
 
     if not sess.get("open"):
+        # Fresh episode after Decide (session cleared). Soft-cap episodes / quarter.
+        left = int(
+            getattr(world, "counsel_actions_left", COUNSEL_EPISODES_PER_QUARTER) or 0
+        )
         if left <= 0:
             return {
                 "ok": False,
                 "mode": getattr(world, "counsel_mode", "stub"),
                 "rows": [],
                 "closed": True,
-                "error": "Counsel budget spent this quarter — Advance to reset",
+                "error": (
+                    f"Counsel soft cap ({COUNSEL_EPISODES_PER_QUARTER}/quarter) — "
+                    "Advance Quarter to open more Speak→Decide episodes"
+                ),
+                "figure_id": focus,
+                "figure_ids": list(aud.get("figure_ids") or []),
+                "channel": channel,
+                "ready_for_new_episode": False,
                 "prompt_chips": suggest_prompt_chips(world, figure_id=focus),
             }
         world.counsel_actions_left = max(0, left - 1)
@@ -1793,6 +1859,8 @@ def run_counsel_round(
         )
         out = _apply_close(world, rows, mode, err, pressure, audience=aud)
         out["exchange"] = ex
+        out["episode_closed"] = True
+        out["ready_for_new_episode"] = True
         return out
 
     rows, mode, err = _generate_rows(

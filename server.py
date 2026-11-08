@@ -881,6 +881,13 @@ def api_counsel():
     pack = _pack(projected, msgs)
     pack["counsel_result"] = projected.get("counsel_result") or result
     pack["talkable_cast"] = projected.get("talkable_cast")
+    # After Speak/Decide, portrait dialogue must show the focus figure — not stale Chronicler
+    dlg = projected.get("counsel_dialogue")
+    if isinstance(dlg, dict) and dlg.get("text"):
+        pack["dialogue"] = {
+            "speaker": str(dlg.get("speaker") or "Counsel"),
+            "text": str(dlg.get("text") or ""),
+        }
     if err:
         pack["ok"] = False
         pack["error"] = err

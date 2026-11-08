@@ -110,7 +110,7 @@ def tick(world: WorldState, *, apply_pending_shock: bool = True) -> WorldState:
     world.alliance_attempt_actions_left = 1
     world.intervene_actions_left = 1
     world.alliance_fund_spent_purposes = []
-    world.counsel_actions_left = 1
+    world.counsel_actions_left = 6  # refresh Speak→Decide episode budget
     # Close any open counsel talk on Advance — no lingering player prompt memory
     from .counsel import clear_counsel_session
     clear_counsel_session(world)

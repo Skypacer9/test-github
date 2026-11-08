@@ -589,16 +589,47 @@ def run_counsel(
     )
     err = None if result.get("ok") else (result.get("error") or "counsel failed")
     projected = _project(world)
+    rows = list(result.get("rows") or [])
+    focus = str(result.get("figure_id") or figure_id or "") or None
     projected["counsel_result"] = {
         "closed": bool(result.get("closed")),
+        "episode_closed": bool(result.get("episode_closed") or result.get("closed")),
+        "ready_for_new_episode": bool(
+            result.get("ready_for_new_episode")
+            or (result.get("closed") and result.get("ok"))
+        ),
         "exchange": result.get("exchange"),
         "exchanges_left": result.get("exchanges_left"),
         "mode": result.get("mode"),
-        "figure_id": result.get("figure_id") or figure_id,
+        "figure_id": focus,
         "figure_ids": result.get("figure_ids") or figure_ids or [],
         "channel": result.get("channel"),
         "talk_mode": result.get("talk_mode"),
         "prompt_chips": result.get("prompt_chips") or suggest_prompt_chips(world),
-        "rows": result.get("rows") or [],
+        "rows": rows,
+        "tips": result.get("tips"),
+        "error": result.get("error"),
     }
-    return projected, _chat_from_new_logs(world, before), err, result
+    # Portrait dialogue box: private counsel never hits world.episode — surface focus reply here
+    talk_mode = str(result.get("talk_mode") or "")
+    focus_row = next(
+        (r for r in rows if str(r.get("figure_id") or "").lower() == str(focus or "").lower()),
+        rows[0] if rows else None,
+    )
+    if focus_row and focus_row.get("utterance"):
+        speaker = str(focus_row.get("figure_id") or focus or "Counsel")
+        if talk_mode == "atmosphere" or str(focus or "") == "atmosphere":
+            speaker = str(focus_row.get("figure_id") or "Atmosphere")
+        projected["counsel_dialogue"] = {
+            "speaker": speaker,
+            "text": str(focus_row.get("utterance") or "")[:280],
+        }
+    # FE chat stream also needs the spoken lines (episode stays private for sealed talk)
+    msgs = _chat_from_new_logs(world, before)
+    for row in rows:
+        u = str(row.get("utterance") or "").strip()
+        if not u:
+            continue
+        who = str(row.get("figure_id") or "Counsel")
+        msgs.append(_msg("assistant", f"**{who}** — {u}"))
+    return projected, msgs, err, result
