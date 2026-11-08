@@ -1,0 +1,1861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Warring States — Tactical Watch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ws-ink: #1A1512;
+      --ws-ink-2: #241E19;
+      --ws-panel: #2A221C;
+      --ws-paper: #E8DCC8;
+      --ws-paper-dim: #B8A990;
+      --ws-sage: #6B7F6A;
+      --ws-mauve: #8B6B7A;
+      --ws-gold: #C4A35A;
+      --ws-gold-bright: #E2C57A;
+      --ws-bronze: #A67C52;
+      --ws-qin: #8B3A3A;
+      --ws-chu: #6B7F6A;
+      --ws-qi: #4A7C8C;
+      --ws-trust: #4A7C8C;
+      --ws-pressure: #8B3A3A;
+      --border: 1.5px solid var(--ws-gold);
+      --shadow: 0 0 0 1px rgba(166, 124, 82, 0.35), 0 12px 40px rgba(0,0,0,0.45);
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; min-height: 100%;
+      background:
+        radial-gradient(ellipse at 20% 0%, rgba(139,58,58,0.18), transparent 45%),
+        radial-gradient(ellipse at 85% 10%, rgba(74,124,140,0.14), transparent 40%),
+        linear-gradient(180deg, #140F0C 0%, var(--ws-ink) 40%, #120E0B 100%);
+      color: var(--ws-paper);
+      font-family: "Source Serif 4", Georgia, serif;
+    }
+
+    body::before {
+      content: "";
+      position: fixed; inset: 0; pointer-events: none; opacity: 0.07;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      z-index: 0;
+    }
+
+    .wrap {
+      position: relative; z-index: 1;
+      max-width: 1180px; margin: 0 auto; padding: 1.25rem 1.25rem 2rem;
+    }
+
+    header.banner {
+      display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+      gap: 0.75rem; margin-bottom: 1rem;
+      border-bottom: var(--border); padding-bottom: 0.85rem;
+      animation: fadeDown 0.7s ease-out both;
+    }
+    .brand {
+      font-family: Cinzel, "Times New Roman", serif;
+      font-weight: 700; font-size: clamp(1.35rem, 3vw, 1.85rem);
+      letter-spacing: 0.08em; color: var(--ws-gold-bright);
+      text-shadow: 0 2px 0 #000;
+    }
+    .brand span { display: block; font-size: 0.72rem; font-weight: 500;
+      letter-spacing: 0.22em; color: var(--ws-paper-dim); margin-top: 0.2rem; }
+    .meta {
+      font-size: 0.95rem; color: var(--ws-paper-dim); text-align: right;
+    }
+    .meta strong { color: var(--ws-gold); font-family: Cinzel, serif; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 1rem;
+    }
+    @media (max-width: 880px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: linear-gradient(165deg, rgba(42,34,28,0.95), rgba(26,21,18,0.98));
+      border: var(--border);
+      box-shadow: var(--shadow);
+      padding: 0.9rem 1rem 1rem;
+      position: relative;
+    }
+    .panel::before, .panel::after {
+      content: ""; position: absolute; width: 10px; height: 10px;
+      border-color: var(--ws-bronze); border-style: solid;
+    }
+    .panel::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+    .panel::after { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+
+    .panel h2 {
+      margin: 0 0 0.75rem; font-family: Cinzel, serif;
+      font-size: 0.85rem; letter-spacing: 0.16em; color: var(--ws-gold);
+      font-weight: 700; text-transform: uppercase;
+    }
+
+    .factions {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.55rem;
+    }
+    @media (max-width: 1100px) {
+      .factions { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 720px) {
+      .factions { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 480px) {
+      .factions { grid-template-columns: 1fr; }
+    }
+
+    .faction {
+      border: 1px solid var(--ws-bronze);
+      background: rgba(0,0,0,0.28);
+      padding: 0.55rem 0.55rem 0.65rem;
+      min-height: 8.5rem;
+      transition: border-color 0.25s, transform 0.25s;
+      animation: riseIn 0.55s ease both;
+    }
+    .faction:nth-child(2) { animation-delay: 0.05s; }
+    .faction:nth-child(3) { animation-delay: 0.1s; }
+    .faction:nth-child(4) { animation-delay: 0.15s; }
+    .faction:nth-child(5) { animation-delay: 0.2s; }
+    .faction:nth-child(6) { animation-delay: 0.25s; }
+    .faction:nth-child(7) { animation-delay: 0.3s; }
+    .faction:hover { border-color: var(--ws-gold); transform: translateY(-2px); }
+    .faction.qin { border-top: 3px solid var(--ws-qin); }
+    .faction.chu { border-top: 3px solid var(--ws-chu); }
+    .faction.qi { border-top: 3px solid var(--ws-qi); }
+    .faction.zhao { border-top: 3px solid #7a6a4a; }
+    .faction.han { border-top: 3px solid #6a5a7a; }
+    .faction.wei { border-top: 3px solid #5a6a7a; }
+    .faction.yan { border-top: 3px solid #4a6a5a; }
+
+    .monogram {
+      width: 2.1rem; height: 2.1rem; border-radius: 2px;
+      display: grid; place-items: center;
+      font-family: Cinzel, serif; font-weight: 700; font-size: 0.95rem;
+      border: 1px solid var(--ws-gold); margin-bottom: 0.35rem;
+      color: var(--ws-paper);
+    }
+    .faction.qin .monogram { background: linear-gradient(145deg, #6e2e2e, #3a1818); }
+    .faction.chu .monogram { background: linear-gradient(145deg, #4f6350, #2a352b); }
+    .faction.qi .monogram { background: linear-gradient(145deg, #3a6573, #1d343c); }
+    .faction.zhao .monogram { background: linear-gradient(145deg, #6a5a3a, #2a2418); }
+    .faction.han .monogram { background: linear-gradient(145deg, #5a4a6a, #241c2a); }
+    .faction.wei .monogram { background: linear-gradient(145deg, #3a4a5a, #1a2028); }
+    .faction.yan .monogram { background: linear-gradient(145deg, #3a5a4a, #1a2820); }
+
+    .faction h3 {
+      margin: 0; font-family: Cinzel, serif; font-size: 1rem;
+      letter-spacing: 0.06em; color: var(--ws-paper);
+    }
+    .stance {
+      margin: 0.25rem 0 0.55rem; font-size: 0.82rem; color: var(--ws-gold-bright);
+      min-height: 1.2em;
+    }
+    .meter { margin: 0.28rem 0; }
+    .meter label {
+      display: flex; justify-content: space-between;
+      font-size: 0.72rem; color: var(--ws-paper-dim); margin-bottom: 0.15rem;
+      letter-spacing: 0.04em;
+    }
+    .bar {
+      height: 7px; background: #0d0a08; border: 1px solid #3a322a; overflow: hidden;
+    }
+    .bar > i {
+      display: block; height: 100%; width: 0%;
+      transition: width 0.45s ease;
+      background: linear-gradient(90deg, var(--fill, var(--ws-gold)), var(--ws-gold-bright));
+    }
+    .faction.qin .bar > i { --fill: var(--ws-qin); }
+    .faction.chu .bar > i { --fill: var(--ws-sage); }
+    .faction.qi .bar > i { --fill: var(--ws-trust); }
+    .faction.zhao .bar > i { --fill: #c4a36a; }
+    .faction.han .bar > i { --fill: #9a8ab0; }
+    .faction.wei .bar > i { --fill: #7a9ab0; }
+    .faction.yan .bar > i { --fill: #7aaa8a; }
+    .faction.optimizing:not(.annexed):not(.desperate) {
+      box-shadow: inset 0 0 0 1px rgba(180, 160, 90, 0.35);
+    }
+
+    .meso-secondary { opacity: 0.72; font-size: 0.85em; }
+    .meso {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.55rem 0.85rem;
+      margin-top: 0.85rem;
+    }
+    .stat {
+      font-size: 0.8rem; color: var(--ws-paper-dim);
+    }
+    .stat b {
+      display: block; color: var(--ws-paper); font-family: Cinzel, serif;
+      font-size: 0.95rem; letter-spacing: 0.04em; margin-top: 0.1rem;
+    }
+    .pill {
+      display: inline-block; margin-top: 0.15rem;
+      padding: 0.12rem 0.45rem; border: 1px solid var(--ws-bronze);
+      font-size: 0.75rem; color: var(--ws-gold-bright); letter-spacing: 0.06em;
+    }
+    .pill.on { border-color: var(--ws-qin); color: #e8b0b0; }
+    .who { margin-top: 0.75rem; font-size: 0.85rem; color: var(--ws-paper-dim);
+      border-top: 1px solid rgba(196,163,90,0.25); padding-top: 0.55rem; }
+    .who em { color: var(--ws-paper); font-style: normal; }
+
+    .dialogue-box {
+      min-height: 7.5rem;
+      border: 1px solid var(--ws-gold);
+      background: linear-gradient(180deg, rgba(36,30,25,0.95), rgba(18,14,11,0.98));
+      padding: 0.85rem 1rem;
+      margin-bottom: 0.75rem;
+      position: relative;
+      animation: pulseBorder 3.5s ease-in-out infinite;
+    }
+    .dialogue-box .speaker {
+      font-family: Cinzel, serif; color: var(--ws-gold-bright);
+      letter-spacing: 0.1em; font-size: 0.8rem; margin-bottom: 0.35rem;
+    }
+    .dialogue-box .line {
+      font-size: 1.02rem; line-height: 1.45; color: var(--ws-paper);
+    }
+
+    .log {
+      height: 260px; overflow-y: auto;
+      border: 1px solid var(--ws-bronze);
+      background: rgba(0,0,0,0.35);
+      padding: 0.55rem 0.7rem;
+      font-size: 0.86rem; line-height: 1.4;
+    }
+    .log .entry { margin: 0.4rem 0; padding-bottom: 0.35rem;
+      border-bottom: 1px solid rgba(196,163,90,0.12); color: var(--ws-paper-dim); }
+    .log .entry strong { color: var(--ws-gold); font-weight: 600; }
+    .log .entry.fresh { color: var(--ws-paper); animation: flashIn 0.5s ease; }
+
+    .actions {
+      margin-top: 1rem;
+      display: flex; flex-wrap: wrap; gap: 0.55rem; align-items: center;
+    }
+    button.cmd {
+      font-family: Cinzel, serif; letter-spacing: 0.08em;
+      background: linear-gradient(180deg, #3a3026, #221a14);
+      color: var(--ws-gold-bright);
+      border: 1px solid var(--ws-gold);
+      padding: 0.55rem 0.95rem; cursor: pointer;
+      font-size: 0.78rem; text-transform: uppercase;
+      transition: background 0.2s, color 0.2s, transform 0.15s;
+    }
+    button.cmd:hover:not(:disabled) {
+      background: linear-gradient(180deg, #4a3c2c, #2c2218);
+      color: #fff4d6; transform: translateY(-1px);
+    }
+    button.cmd:disabled { opacity: 0.45; cursor: wait; }
+    button.cmd.primary {
+      background: linear-gradient(180deg, #5a3a28, #2e1a12);
+      border-color: var(--ws-gold-bright);
+    }
+    button.cmd.danger { border-color: var(--ws-qin); color: #e8b8b8; }
+
+    .intervene-row {
+      display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: center;
+      width: 100%; margin-top: 0.15rem;
+      padding: 0.55rem 0.65rem;
+      border: 1px dashed rgba(196,163,90,0.45);
+      background: rgba(0,0,0,0.2);
+    }
+    .intervene-row span.label {
+      font-family: Cinzel, serif; font-size: 0.72rem;
+      letter-spacing: 0.12em; color: var(--ws-gold); text-transform: uppercase;
+    }
+    .chk {
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      font-size: 0.85rem; color: var(--ws-paper); cursor: pointer;
+      user-select: none;
+    }
+    .chk input { accent-color: var(--ws-gold); }
+
+    .status {
+      margin-top: 0.65rem; min-height: 1.2em;
+      font-size: 0.78rem; color: var(--ws-mauve); letter-spacing: 0.04em;
+    }
+    .status.err { color: #c97a7a; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%) translateY(120%);
+      z-index: 40; padding: 0.55rem 1.1rem;
+      font-family: Cinzel, serif; font-size: 0.78rem; letter-spacing: 0.08em;
+      text-transform: uppercase; color: #fff4d6;
+      background: linear-gradient(180deg, #3a2a1c, #1a120c);
+      border: 1px solid var(--ws-gold); box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      opacity: 0; pointer-events: none;
+      transition: transform 0.35s ease, opacity 0.35s ease;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    .save-row {
+      display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center;
+      width: 100%; margin-top: 0.35rem;
+    }
+    #load-file { display: none; }
+    .slot-panel {
+      display: none; position: fixed; inset: 0; z-index: 50;
+      align-items: center; justify-content: center;
+      background: rgba(10, 6, 4, 0.72);
+      padding: 1rem;
+    }
+    .slot-panel.open { display: flex; }
+    .slot-card {
+      width: min(420px, 100%); max-height: min(70vh, 520px);
+      overflow: auto; padding: 1rem 1.1rem 1.15rem;
+      background: linear-gradient(180deg, #2a1c12, #140e0a);
+      border: 1px solid var(--ws-gold);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.55);
+    }
+    .slot-card h3 {
+      margin: 0 0 0.65rem; font-family: Cinzel, serif;
+      font-size: 0.95rem; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--ws-gold);
+    }
+    .slot-list { list-style: none; margin: 0; padding: 0; }
+    .slot-list li {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 0.5rem; padding: 0.45rem 0.35rem;
+      border-bottom: 1px solid rgba(201, 162, 84, 0.22);
+    }
+    .slot-list li:last-child { border-bottom: 0; }
+    .slot-meta {
+      display: flex; flex-direction: column; gap: 0.1rem; min-width: 0;
+      font-size: 0.78rem; color: #e8dcc4;
+    }
+    .slot-meta strong {
+      font-family: Cinzel, serif; font-weight: 600; letter-spacing: 0.04em;
+      color: #fff4d6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .slot-meta span { color: var(--ws-mauve); font-size: 0.7rem; }
+    .slot-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.75rem; }
+    .slot-empty { color: var(--ws-mauve); font-size: 0.78rem; padding: 0.4rem 0; }
+
+    .bar.blue i { background: linear-gradient(90deg, #2a5a8c, #5aa0d8); }
+    .faction.annexed h3, .faction.annexed .monogram { color: #c94a4a; }
+    .faction.annexed { opacity: 0.72; border-color: rgba(201,74,74,0.55); }
+    .faction .warn-desperation {
+      display: none; margin-top: 0.35rem; padding: 0.25rem 0.4rem;
+      font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
+      color: #ffd0a8; border: 1px solid rgba(220,120,60,0.7);
+      background: rgba(120,40,10,0.35);
+      animation: desperFlash 1.1s ease-in-out infinite;
+    }
+    .faction.desperate .warn-desperation { display: block; }
+    @keyframes desperFlash {
+      0%, 100% { opacity: 0.55; box-shadow: 0 0 0 rgba(220,120,60,0); }
+      50% { opacity: 1; box-shadow: 0 0 10px rgba(220,120,60,0.35); }
+    }
+    .player-invest {
+      display: flex; flex-wrap: wrap; gap: 0.55rem; align-items: center;
+      width: 100%; margin-top: 0.55rem;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid rgba(196,163,90,0.4);
+      background: rgba(0,0,0,0.22);
+    }
+    .player-invest select {
+      background: #1a140e; color: var(--ws-paper); border: 1px solid rgba(196,163,90,0.45);
+      padding: 0.35rem 0.5rem; font-size: 0.8rem;
+    }
+    .player-purse {
+      width: 100%; font-size: 0.75rem; color: var(--ws-mauve);
+      letter-spacing: 0.04em; margin-bottom: 0.15rem;
+    }
+    .player-log-wrap { margin-top: 0.65rem; width: 100%; }
+    .player-log-wrap label {
+      display: block; font-family: Cinzel, serif; font-size: 0.72rem;
+      letter-spacing: 0.12em; color: var(--ws-gold); text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+    #player-log {
+      width: 100%; min-height: 7.5rem; max-height: 12rem; resize: vertical;
+      background: #120e0a; color: #e8dcc0; border: 1px solid rgba(196,163,90,0.35);
+      padding: 0.5rem 0.6rem; font-size: 0.78rem; line-height: 1.35;
+      font-family: "Source Serif 4", Georgia, serif;
+    }
+    .ended {
+      margin-top: 0.75rem; padding: 0.65rem 0.75rem;
+      border: 1px solid var(--ws-qin); background: rgba(139,58,58,0.15);
+      font-size: 0.9rem; display: none;
+    }
+    .ended.show { display: block; }
+
+    .tabs {
+      display: flex; gap: 0.35rem; margin: -0.15rem 0 0.75rem;
+      border-bottom: 1px solid rgba(196,163,90,0.35); padding-bottom: 0.45rem;
+    }
+    .tabs button {
+      font-family: Cinzel, serif; letter-spacing: 0.1em; text-transform: uppercase;
+      font-size: 0.72rem; padding: 0.4rem 0.7rem; cursor: pointer;
+      background: transparent; color: var(--ws-paper-dim);
+      border: 1px solid transparent;
+    }
+    .tabs button:hover { color: var(--ws-gold-bright); }
+    .tabs button.active {
+      color: var(--ws-gold-bright); border-color: var(--ws-gold);
+      background: rgba(196,163,90,0.12);
+    }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; animation: riseIn 0.35s ease both; }
+
+    /* Portrait strip picker */
+    .portrait-strip {
+      display: flex; gap: 0.45rem; overflow-x: auto; padding: 0.35rem 0.1rem 0.55rem;
+      margin-bottom: 0.55rem; -webkit-overflow-scrolling: touch;
+      scroll-snap-type: x proximity;
+    }
+    .portrait-card {
+      flex: 0 0 auto; width: 4.6rem; scroll-snap-align: start;
+      border: 1px solid rgba(166,124,82,0.45); background: rgba(0,0,0,0.28);
+      padding: 0.28rem 0.28rem 0.35rem; cursor: pointer; text-align: center;
+      color: var(--ws-paper-dim); transition: border-color 0.2s, background 0.2s, opacity 0.2s;
+    }
+    .portrait-card img {
+      width: 100%; aspect-ratio: 4/5; object-fit: cover; display: block;
+      background: #1a120c; border: 1px solid rgba(196,163,90,0.25);
+    }
+    .portrait-card .pname {
+      font-family: Cinzel, serif; font-size: 0.62rem; letter-spacing: 0.04em;
+      margin-top: 0.28rem; color: var(--ws-gold-bright); line-height: 1.2;
+    }
+    .portrait-card .pstatus {
+      font-size: 0.58rem; color: var(--ws-bronze); margin-top: 0.12rem;
+    }
+    .portrait-card:hover { border-color: var(--ws-gold); }
+    .portrait-card.on {
+      border-color: var(--ws-gold-bright); background: rgba(196,163,90,0.14);
+    }
+    .portrait-card.locked { opacity: 0.42; cursor: not-allowed; }
+    .portrait-card.locked:hover { border-color: rgba(166,124,82,0.45); }
+
+    /* Talk layout: chat + side profile */
+    .talk-layout {
+      display: grid; grid-template-columns: 1fr 8.5rem; gap: 0.65rem; align-items: start;
+    }
+    @media (max-width: 880px) {
+      .talk-layout { grid-template-columns: 1fr; }
+      .talk-side { order: -1; display: grid; grid-template-columns: 5.5rem 1fr; gap: 0.55rem; align-items: start; }
+      .talk-side .talk-ocean { grid-column: 1 / -1; }
+    }
+    .talk-side {
+      border: 1px solid rgba(166,124,82,0.4); background: rgba(0,0,0,0.28);
+      padding: 0.45rem; position: sticky; top: 0.35rem;
+    }
+    .talk-side img.talk-portrait {
+      width: 100%; aspect-ratio: 4/5; object-fit: cover; display: block;
+      border: 1px solid rgba(196,163,90,0.35); background: #1a120c;
+    }
+    .talk-side .talk-name {
+      font-family: Cinzel, serif; font-size: 0.78rem; color: var(--ws-gold-bright);
+      margin-top: 0.35rem; letter-spacing: 0.05em;
+    }
+    .talk-side .talk-role {
+      font-size: 0.68rem; color: var(--ws-paper-dim); margin-top: 0.15rem; line-height: 1.3;
+    }
+    .talk-side .talk-ocean { margin-top: 0.4rem; }
+    .talk-side .talk-ocean .meter { margin: 0.22rem 0; }
+    .talk-side .talk-ocean .meter label { font-size: 0.62rem; }
+
+    .talk-hint {
+      margin: 0 0 0.5rem; padding: 0;
+      font-size: 0.78rem; color: var(--ws-paper-dim);
+      letter-spacing: 0.02em;
+    }
+    .cmd.ghost {
+      background: transparent; border-color: rgba(166,124,82,0.35);
+      color: var(--ws-paper-dim);
+    }
+    .cmd.ghost:hover { border-color: var(--ws-gold); color: var(--ws-paper); }
+    .portrait-strip {
+      display: flex; flex-wrap: nowrap; gap: 0.45rem;
+      overflow-x: auto; padding: 0.15rem 0 0.55rem;
+      scrollbar-width: thin;
+    }
+    .portrait-card {
+      flex: 0 0 auto; width: 4.4rem; padding: 0.25rem;
+      background: rgba(0,0,0,0.28); border: 1px solid rgba(166,124,82,0.4);
+      border-radius: 4px; cursor: pointer; text-align: center;
+      color: var(--ws-paper); font-family: Cinzel, serif; font-size: 0.58rem;
+    }
+    .faction .meter label { font-size: 0.62rem; }
+    .faction h3 { font-size: 0.95rem; }
+    #counsel-prompt { min-height: 2.6rem; max-height: 4.5rem; }
+    .counsel-chips button.chip-btn {
+      font-size: 0.7rem; padding: 0.28rem 0.55rem;
+      max-width: 100%;
+    }
+
+    .talk-empty {
+      font-size: 0.88rem; color: var(--ws-paper-dim); padding: 0.75rem 0.2rem;
+      border: 1px dashed rgba(166,124,82,0.35); text-align: center;
+    }
+    .talk-panel[hidden], .talk-empty[hidden] { display: none !important; }
+
+
+    .fig-radios {
+      display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem;
+    }
+    .fig-radios label {
+      display: inline-flex; align-items: center; gap: 0.28rem;
+      font-size: 0.78rem; color: var(--ws-paper); cursor: pointer;
+      padding: 0.28rem 0.5rem;
+      border: 1px solid rgba(166,124,82,0.45);
+      background: rgba(0,0,0,0.22);
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .fig-radios label:hover { border-color: var(--ws-gold); }
+    .fig-radios label.on {
+      border-color: var(--ws-gold-bright);
+      background: rgba(196,163,90,0.14);
+      color: var(--ws-gold-bright);
+    }
+    .fig-radios input { accent-color: var(--ws-gold); margin: 0; }
+
+    .prof-head {
+      margin-bottom: 0.65rem;
+      padding-bottom: 0.55rem;
+      border-bottom: 1px solid rgba(196,163,90,0.25);
+    }
+    .prof-head .zh {
+      font-family: Cinzel, serif; font-size: 1.15rem; color: var(--ws-gold-bright);
+      letter-spacing: 0.06em;
+    }
+    .prof-head .role {
+      font-size: 0.82rem; color: var(--ws-paper-dim); margin-top: 0.2rem;
+    }
+    .prof-head .meta-line {
+      font-size: 0.75rem; color: var(--ws-bronze); margin-top: 0.25rem;
+      letter-spacing: 0.04em;
+    }
+    .dossier {
+      font-size: 0.88rem; line-height: 1.45; color: var(--ws-paper);
+      margin: 0.55rem 0 0.75rem;
+    }
+    .prof-sec {
+      margin: 0.7rem 0 0.35rem;
+      font-family: Cinzel, serif; font-size: 0.72rem;
+      letter-spacing: 0.14em; color: var(--ws-gold); text-transform: uppercase;
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.35rem 0; }
+    .chip {
+      font-size: 0.72rem; padding: 0.18rem 0.45rem;
+      border: 1px solid var(--ws-bronze); color: var(--ws-paper-dim);
+      background: rgba(0,0,0,0.25);
+    }
+    .trust-snip {
+      display: grid; grid-template-columns: 1fr auto; gap: 0.2rem 0.75rem;
+      font-size: 0.78rem; color: var(--ws-paper-dim);
+      max-height: 7.5rem; overflow-y: auto;
+      border: 1px solid rgba(166,124,82,0.35);
+      background: rgba(0,0,0,0.28);
+      padding: 0.45rem 0.55rem;
+    }
+    .trust-snip span.v { color: var(--ws-gold-bright); font-family: Cinzel, serif; }
+    .intent-box {
+      font-size: 0.9rem; color: var(--ws-gold-bright); margin-bottom: 0.35rem;
+    }
+    .ocean .meter label span, .state-meters .meter label span {
+      font-variant-numeric: tabular-nums;
+    }
+    .ocean .bar > i { --fill: var(--ws-gold); }
+    .ocean .meter[data-k="openness"] .bar > i { --fill: var(--ws-sage); }
+    .ocean .meter[data-k="conscientiousness"] .bar > i { --fill: var(--ws-qi); }
+    .ocean .meter[data-k="extraversion"] .bar > i { --fill: var(--ws-gold); }
+    .ocean .meter[data-k="agreeableness"] .bar > i { --fill: var(--ws-mauve); }
+    .ocean .meter[data-k="neuroticism"] .bar > i { --fill: var(--ws-qin); }
+
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: none; }
+    }
+    @keyframes riseIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: none; }
+    }
+    @keyframes flashIn {
+      from { background: rgba(196,163,90,0.18); }
+      to { background: transparent; }
+    }
+    @keyframes pulseBorder {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(196,163,90,0); }
+      50% { box-shadow: 0 0 12px 0 rgba(196,163,90,0.18); }
+    }
+
+    #chronicle-log {
+      width: 100%; min-height: 4.5rem; max-height: 8rem; resize: vertical;
+      background: rgba(0,0,0,0.35); color: var(--ws-paper); border: 1px solid rgba(166,124,82,0.3);
+      font-family: "Source Serif 4", Georgia, serif; font-size: 0.82rem; padding: 0.4rem;
+    }
+    .counsel-box {
+      margin-top: 0.75rem; padding: 0.65rem 0.75rem;
+      border: 1px solid rgba(166,124,82,0.4);
+      background: rgba(0,0,0,0.28);
+    }
+    .counsel-box .clabel {
+      font-family: Cinzel, serif; font-size: 0.72rem; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--ws-gold); margin-bottom: 0.35rem;
+    }
+    .counsel-box .mode-badge {
+      display: inline-block; margin-left: 0.4rem; padding: 0.05rem 0.35rem;
+      border: 1px solid var(--ws-bronze); font-size: 0.65rem; color: var(--ws-paper-dim);
+    }
+    #counsel-log {
+      width: 100%; min-height: 5.5rem; max-height: 9rem; resize: vertical;
+      background: rgba(0,0,0,0.35); color: var(--ws-paper); border: 1px solid rgba(166,124,82,0.3);
+      font-family: "Source Serif 4", Georgia, serif; font-size: 0.82rem; padding: 0.4rem;
+    }
+    #counsel-prompt {
+      width: 100%; min-height: 2.4rem; margin: 0.35rem 0;
+      background: rgba(0,0,0,0.35); color: var(--ws-paper); border: 1px solid rgba(166,124,82,0.45);
+      font-family: "Source Serif 4", Georgia, serif; font-size: 0.88rem; padding: 0.4rem 0.5rem;
+    }
+    .counsel-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.25rem 0 0.45rem; }
+    .counsel-chips button.chip-btn {
+      font-size: 0.72rem; padding: 0.2rem 0.45rem; cursor: pointer;
+      border: 1px solid var(--ws-bronze); background: rgba(0,0,0,0.25); color: var(--ws-paper-dim);
+      font-family: "Source Serif 4", Georgia, serif;
+    }
+    .counsel-chips button.chip-btn:hover { border-color: var(--ws-gold); color: var(--ws-paper); }
+    .counsel-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="banner">
+      <div class="brand">Warring States<span>Late period · meso tactical watch</span></div>
+      <div class="meta">
+        <div>Year <strong id="year">—</strong> · Q<span id="qiy">—</span></div>
+        <div>Tick <strong id="tick">0</strong> · Pathway <strong id="pathway">—</strong></div>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Field · Seven States</h2>
+        <div class="factions" id="factions">
+          <!-- cards filled by JS for Qin Chu Qi Zhao Han Wei Yan -->
+        </div>
+
+        <div class="meso">
+          <div class="stat">Qin pressure <b id="qin-pressure">—</b></div>
+          <div class="stat">Cohesion <b id="cohesion">—</b></div>
+          <div class="stat">Identity <b id="shared">—</b></div>
+          <div class="stat">Trust <b id="trust-line">chu→qi —</b></div>
+          <div class="stat">Quorum <span class="pill" id="quorum">—</span></div>
+          <div class="stat">Chu sync <b id="chu-sync">—</b></div>
+          <div class="stat">Mil adv <b id="m2-line">—</b></div>
+        </div>
+        <div class="meso meso-secondary" aria-label="Secondary meters">
+          <div class="stat">Cascade <span class="pill" id="cascade">—</span></div>
+          <div class="stat">Famine / levy <b id="m1-line">—</b></div>
+          <div class="stat">Sat / manpower <b id="demo-line">—</b></div>
+        </div>
+        <div class="who">Who vs Qin: <em id="who-vs">—</em></div>
+        <div class="who" id="pathway-reading-wrap" style="display:none">Reading: <em id="pathway-reading">—</em></div>
+        <div class="ended" id="ended"></div>
+      </section>
+
+      <section class="panel">
+        <div class="tabs" role="tablist" aria-label="Right panel">
+          <button type="button" class="active" data-tab="dialogue" role="tab" aria-selected="true">Dialogue</button>
+          <button type="button" data-tab="quarterly" role="tab" aria-selected="false">Quarterly log</button>
+          <button type="button" data-tab="profile" role="tab" aria-selected="false">Character</button>
+        </div>
+
+        <div id="pane-dialogue" class="tab-pane active" role="tabpanel">
+          <h2>Dialogue</h2>
+          <p class="talk-hint" id="talk-hint">Tap a portrait to counsel. Era-locked faces stay dim.</p>
+          <div class="portrait-strip" id="talk-strip" role="listbox" aria-label="Talkable figures"></div>
+          <div class="talk-empty" id="talk-empty">Choose someone to speak with.</div>
+
+          <div class="talk-panel" id="talk-panel" hidden>
+            <div class="talk-layout">
+              <div class="talk-main">
+                <div class="counsel-box" id="counsel-box">
+                  <div class="clabel">Talk <span id="talk-with-label">—</span>
+                    <span class="mode-badge" id="counsel-mode">stub</span>
+                    <span class="mode-badge" id="counsel-x">—</span>
+                  </div>
+                  <textarea id="counsel-log" readonly placeholder="Figure replies appear here…"></textarea>
+                  <label class="clabel" for="counsel-prompt" style="display:block;margin-top:0.35rem" id="counsel-prompt-label">Your pressure</label>
+                  <div class="counsel-chips" id="counsel-chips" aria-label="Short prompts"></div>
+                  <textarea id="counsel-prompt" rows="2" placeholder="One line of pressure…"></textarea>
+                  <div class="counsel-actions">
+                    <button class="cmd primary" id="btn-counsel" type="button">Speak</button>
+                    <button class="cmd" id="btn-counsel-close" type="button">Decide</button>
+                    <button class="cmd ghost" id="btn-talk-clear" type="button">Back</button>
+                  </div>
+                </div>
+              </div>
+              <aside class="talk-side" id="talk-side" aria-label="Figure stats">
+                <img class="talk-portrait" id="talk-portrait" alt="" />
+                <div>
+                  <div class="talk-name" id="talk-name">—</div>
+                  <div class="talk-role" id="talk-role"></div>
+                  <div class="talk-ocean ocean" id="talk-ocean"></div>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+
+        <div id="pane-quarterly" class="tab-pane" role="tabpanel" hidden>
+          <h2>Quarterly log</h2>
+          <div class="dialogue-box">
+            <div class="speaker" id="dlg-speaker">Chronicler</div>
+            <div class="line" id="dlg-line">Connecting to the field…</div>
+          </div>
+          <div class="log" id="log" aria-live="polite"></div>
+
+          <div class="actions">
+            <button class="cmd primary" id="btn-advance" type="button">Advance Quarter</button>
+            <button class="cmd" id="btn-alliance" type="button">Attempt Alliance</button>
+            <button class="cmd danger" id="btn-new" type="button">New Run</button>
+
+            <div class="intervene-row">
+              <span class="label">Intervene</span>
+              <label class="chk"><input type="checkbox" id="t-qin" value="qin" /> Qin</label>
+              <label class="chk"><input type="checkbox" id="t-chu" value="chu" checked /> Chu</label>
+              <label class="chk"><input type="checkbox" id="t-qi" value="qi" /> Qi</label>
+              <button class="cmd" id="btn-intervene" type="button">Intervene</button>
+            </div>
+            <div class="save-row">
+              <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase">Campaign</span>
+              <button class="cmd" id="btn-save" type="button">Save</button>
+              <button class="cmd" id="btn-load" type="button">Load</button>
+              <input id="load-file" type="file" accept="application/json,.json" />
+            </div>
+          </div>
+          <div class="status" id="status"></div>
+          <div class="player-invest">
+            <div class="player-purse">Player purse — Political Capital <b id="pc-val">100</b> · Treasury <b id="pt-val">100</b></div>
+            <div class="player-purse">Alliance joint fund — Grain <b id="af-g">0</b> · Treasury <b id="af-t">0</b></div>
+            <div class="player-purse">Actions this quarter — Invest <b id="invest-left">1</b>/1 · Alliance <b id="alliance-left">1</b>/1 · Intervene <b id="intervene-left">1</b>/1 · Fund purposes <b id="af-left">4</b>/4</div>
+            <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase">Invest</span>
+            <select id="invest-target" aria-label="Target state">
+              <option value="chu">Chu</option>
+              <option value="qi">Qi</option>
+              <option value="zhao">Zhao</option>
+              <option value="han">Han</option>
+              <option value="wei">Wei</option>
+              <option value="yan">Yan</option>
+            </select>
+            <button class="cmd" id="btn-fund" type="button">Fund Military</button>
+            <button class="cmd" id="btn-grain" type="button">Send Grain</button>
+            <button class="cmd" id="btn-mediate" type="button">Broker Mediation</button>
+            <span class="label" style="font-family:Cinzel,serif;font-size:0.72rem;letter-spacing:0.12em;color:var(--ws-gold);text-transform:uppercase;width:100%;margin-top:0.25rem">Alliance fund spend</span>
+            <button class="cmd" id="btn-af-tech" type="button">Tech</button>
+            <button class="cmd" id="btn-af-agri" type="button">Agriculture</button>
+            <button class="cmd" id="btn-af-build" type="button">Construction</button>
+            <button class="cmd" id="btn-af-mil" type="button">Military</button>
+          </div>
+
+          <div class="counsel-box" id="chronicle-box">
+            <div class="clabel">Cultural chronicle <span class="mode-badge" id="chronicle-mode">stub</span></div>
+            <textarea id="chronicle-log" readonly placeholder="Wry seasonal readings — one gloss among several, not destiny…"></textarea>
+          </div>
+          <div class="player-log-wrap">
+            <label for="player-log">Player Log · Shadow Actions</label>
+            <textarea id="player-log" readonly placeholder="Consequence lines and shadow attacks appear here…"></textarea>
+          </div>
+        </div>
+
+        <div id="pane-profile" class="tab-pane" role="tabpanel" hidden>
+          <h2>Character Profile</h2>
+          <div class="fig-radios" id="fig-radios" role="radiogroup" aria-label="Named figures"></div>
+          <div id="profile-body">
+            <div class="prof-head">
+              <div class="zh" id="prof-name">—</div>
+              <div class="role" id="prof-role">Select a figure</div>
+              <div class="meta-line" id="prof-meta"></div>
+            </div>
+            <div class="dossier" id="prof-dossier"></div>
+            <div class="prof-sec">Sticky intention (home court)</div>
+            <div class="intent-box" id="prof-intent">—</div>
+            <div class="prof-sec">OCEAN (figure prior)</div>
+            <div class="ocean" id="prof-ocean"></div>
+            <div class="prof-sec">State meters (live home court)</div>
+            <div class="state-meters" id="prof-state"></div>
+            <div class="prof-sec">Four base schools</div>
+            <div id="prof-bases"></div>
+            <div class="prof-sec">Packets / syncretisms</div>
+            <div class="chips" id="prof-packets"></div>
+            <div id="prof-weights"></div>
+            <div class="prof-sec">Dyadic trust</div>
+            <div class="trust-snip" id="prof-trust"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <div class="slot-panel" id="slot-panel" aria-hidden="true">
+    <div class="slot-card" role="dialog" aria-labelledby="slot-title">
+      <h3 id="slot-title">Load campaign</h3>
+      <ul class="slot-list" id="slot-list"></ul>
+      <div class="slot-empty" id="slot-empty" hidden>No saved slots yet.</div>
+      <div class="slot-actions">
+        <button class="cmd" id="btn-load-file" type="button">File…</button>
+        <button class="cmd" id="btn-slot-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const LS_SLOTS_KEY = "ws_abm_slots_v1";
+    const LS_SESSION_KEY = "ws_abm_session_v1";
+    const LS_LEGACY_KEY = "ws_abm_save_v1";
+    let busy = false;
+    let talkFigureId = null;
+    let talkableCast = [];
+    let selectedFigure = "kaolie";
+    let profileLoadedOnce = false;
+    let skipNextAutosave = false;
+    let lastBudget = { invest: 1, allianceAttempt: 1, intervene: 1, allianceFundSpent: [] };
+
+    const OCEAN_KEYS = [
+      ["openness", "Openness"],
+      ["conscientiousness", "Conscientiousness"],
+      ["extraversion", "Extraversion"],
+      ["agreeableness", "Agreeableness"],
+      ["neuroticism", "Neuroticism"],
+    ];
+    const STATE_KEYS = [
+      ["resentment", "Resentment"],
+      ["fear_of_qin", "Fear of Qin"],
+      ["betrayal_memory", "Betrayal memory"],
+      ["status_threat", "Status threat"],
+      ["perceived_threat", "Perceived threat"],
+      ["withholding_threshold", "Withholding threshold"],
+    ];
+    const BASE_KEYS = [
+      ["legalism", "Legalism"],
+      ["mohism", "Mohism"],
+      ["daoism", "Daoism"],
+      ["confucianism", "Confucianism"],
+    ];
+
+    function pct(x) {
+      const n = Number(x);
+      if (!Number.isFinite(n)) return 0;
+      // engine often stores 0–1 or 0–100; normalize to 0–100 display
+      return n <= 1.0001 ? Math.round(n * 1000) / 10 : Math.round(n * 10) / 10;
+    }
+    function bar(id, val01) {
+      const el = $(id);
+      if (!el) return;
+      const n = Number(val01);
+      let w = 0;
+      if (Number.isFinite(n)) w = n <= 1.0001 ? n * 100 : Math.min(100, n);
+      el.style.width = Math.max(0, Math.min(100, w)) + "%";
+    }
+    function setText(id, t) { const el = $(id); if (el) el.textContent = t; }
+
+    function fmtFund(n) {
+      const v = Number(n);
+      if (!Number.isFinite(v)) return "—";
+      return Math.round(v * 10) / 10;
+    }
+
+    function renderAllianceFund(s, data) {
+      const grain = (s && s.alliance_fund_grain != null)
+        ? s.alliance_fund_grain
+        : (data && data.alliance_fund_grain);
+      const treas = (s && s.alliance_fund_treasury != null)
+        ? s.alliance_fund_treasury
+        : (data && data.alliance_fund_treasury);
+      setText("af-g", fmtFund(grain));
+      setText("af-t", fmtFund(treas));
+    }
+
+    const INVEST_IDS = ["chu", "qi", "zhao", "han", "wei", "yan"];
+    const FIELD_IDS = ["qin", "chu", "qi", "zhao", "han", "wei", "yan"];
+    const FIELD_META = {
+      qin:  { zh: "秦", name: "Qin" },
+      chu:  { zh: "楚", name: "Chu" },
+      qi:   { zh: "齐", name: "Qi" },
+      zhao: { zh: "赵", name: "Zhao" },
+      han:  { zh: "韩", name: "Han" },
+      wei:  { zh: "魏", name: "Wei" },
+      yan:  { zh: "燕", name: "Yan" },
+    };
+
+    function ensureFactionCards() {
+      const box = $("factions");
+      if (!box) return;
+      FIELD_IDS.forEach((id) => {
+        if ($("card-" + id)) return;
+        const meta = FIELD_META[id] || { zh: "?", name: id };
+        const fearBlock = (id === "qin")
+          ? `<div class="meter"><label>Fear of Qin <span id="v-${id}-fear">N/A</span></label>` +
+            `<div class="bar"><i id="b-${id}-fear" style="width:0;opacity:.35"></i></div></div>`
+          : `<div class="meter"><label>Fear of Qin <span id="v-${id}-fear">0</span></label>` +
+            `<div class="bar"><i id="b-${id}-fear"></i></div></div>`;
+        const art = document.createElement("article");
+        art.className = "faction " + id;
+        art.id = "card-" + id;
+        art.dataset.id = id;
+        art.innerHTML =
+          `<div class="monogram">${meta.zh}</div>` +
+          `<h3 id="name-${id}">${meta.name}</h3>` +
+          `<div class="stance" id="stance-${id}">—</div>` +
+          `<div class="warn-desperation">Desperate — raiding for grain</div>` +
+          `<div class="meter"><label>Viability <span id="v-${id}-via">—</span></label>` +
+            `<div class="bar"><i id="b-${id}-via"></i></div></div>` +
+          `<div class="meter"><label>Grain · Treasury <span id="v-${id}-resrc">—</span></label>` +
+            `<div class="bar"><i id="b-${id}-resrc"></i></div></div>` +
+          `<div class="meter"><label>Yield <span id="v-${id}-yield">—</span></label>` +
+            `<div class="bar"><i id="b-${id}-yield"></i></div></div>` +
+          `<div class="meter"><label>Military <span id="v-${id}-mil">—</span></label>` +
+            `<div class="bar"><i id="b-${id}-mil"></i></div></div>` +
+          `<div class="meter"><label>Tech adopt <span id="v-${id}-tech">—</span></label>` +
+            `<div class="bar"><i id="b-${id}-tech"></i></div></div>` +
+          `<div class="meter"><label>Resentment <span id="v-${id}-res">0</span></label>` +
+            `<div class="bar"><i id="b-${id}-res"></i></div></div>` +
+          fearBlock;
+        box.appendChild(art);
+      });
+    }
+
+    function refreshInvestTargets(agents) {
+      const sel = $("invest-target");
+      if (!sel) return;
+      const prev = sel.value;
+      const ags = agents || {};
+      sel.innerHTML = INVEST_IDS.map((id) => {
+        const ag = ags[id] || {};
+        const ann = !!ag.annexed || Number(ag.viability) <= 0;
+        const name = ag.name || id;
+        const label = ann ? (name + " (annexed)") : name;
+        return `<option value="${id}"${ann ? " disabled" : ""}>${label}</option>`;
+      }).join("");
+      const prevOk = prev && sel.querySelector(`option[value="${prev}"]:not([disabled])`);
+      if (prevOk) sel.value = prev;
+      else {
+        const first = INVEST_IDS.find((id) => {
+          const ag = ags[id] || {};
+          return !(ag.annexed || Number(ag.viability) <= 0);
+        });
+        sel.value = first || "chu";
+      }
+    }
+
+    function meterHtml(key, label, val, idPrefix) {
+      const p = pct(val);
+      const n = Number(val);
+      let w = 0;
+      if (Number.isFinite(n)) w = n <= 1.0001 ? n * 100 : Math.min(100, n);
+      w = Math.max(0, Math.min(100, w));
+      const bid = idPrefix + "-" + key;
+      return `<div class="meter" data-k="${key}"><label>${label} <span>${p}%</span></label>` +
+        `<div class="bar"><i id="${bid}" style="width:${w}%"></i></div></div>`;
+    }
+
+    function switchTab(name) {
+      document.querySelectorAll(".tabs button").forEach((btn) => {
+        const on = btn.dataset.tab === name;
+        btn.classList.toggle("active", on);
+        btn.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      ["dialogue", "quarterly", "profile"].forEach((tab) => {
+        const pane = $("pane-" + tab);
+        const on = tab === name;
+        pane.classList.toggle("active", on);
+        if (on) pane.removeAttribute("hidden");
+        else pane.setAttribute("hidden", "");
+      });
+      if (name === "profile") loadProfile(selectedFigure);
+    }
+
+    function renderFigureRadios(figures) {
+      const box = $("fig-radios");
+      if (!box) return;
+      const list = (figures && figures.length ? figures : talkableCast).map((f) => ({
+        id: f.id,
+        short: f.short || f.name || f.label || f.id,
+        portrait: f.portrait || ("/static/portraits/" + f.id + ".svg"),
+        talkable: f.talkable !== false,
+        status: f.status || "",
+      }));
+      if (!list.length) {
+        box.innerHTML = [
+          { id: "kaolie", short: "Kaolie" },
+          { id: "king_you", short: "King You" },
+          { id: "chunshen", short: "Chunshen" },
+          { id: "chu_nobility", short: "Chu nobility" },
+          { id: "zhaoxiang", short: "Zhaoxiang" },
+          { id: "ying_zheng", short: "Ying Zheng" },
+          { id: "li_si", short: "Li Si" },
+          { id: "king_jian", short: "King Jian" },
+        ].map((f) => portraitCardHtml(f, selectedFigure, "profile")).join("");
+      } else {
+        box.innerHTML = list.map((f) => portraitCardHtml(f, selectedFigure, "profile")).join("");
+      }
+      box.classList.add("portrait-strip");
+      box.querySelectorAll(".portrait-card").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          selectedFigure = btn.dataset.id;
+          box.querySelectorAll(".portrait-card").forEach((c) => c.classList.toggle("on", c.dataset.id === selectedFigure));
+          loadProfile(selectedFigure);
+        });
+      });
+    }
+
+    function portraitCardHtml(f, selectedId, mode) {
+      const locked = mode === "talk" && f.talkable === false;
+      const on = f.id === selectedId ? " on" : "";
+      const lockCls = locked ? " locked" : "";
+      const st = locked ? (f.note || f.status || "locked") : (f.home || "");
+      const status = f.status === "not_yet_risen" ? "not yet risen" : (locked ? "locked" : "");
+      return `<button type="button" class="portrait-card${on}${lockCls}" role="option" data-id="${f.id}" data-talkable="${f.talkable !== false}" aria-label="${f.short || f.id}">` +
+        `<img src="${f.portrait || ("/static/portraits/" + f.id + ".svg")}" alt="" />` +
+        `<div class="pname">${f.short || f.name || f.id}</div>` +
+        (status ? `<div class="pstatus">${status}</div>` : "") +
+        `</button>`;
+    }
+
+    function renderTalkStrip(cast) {
+      talkableCast = cast || talkableCast || [];
+      const box = $("talk-strip");
+      if (!box) return;
+      const list = talkableCast.length ? talkableCast : [];
+      box.innerHTML = list.map((f) => portraitCardHtml(f, talkFigureId, "talk")).join("");
+      box.querySelectorAll(".portrait-card").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (btn.classList.contains("locked") || btn.dataset.talkable === "false") {
+            $("status") && ($("status").textContent = "Not yet risen or home annexed.");
+            return;
+          }
+          openTalk(btn.dataset.id);
+        });
+      });
+    }
+
+    async function openTalk(fid) {
+      talkFigureId = fid;
+      selectedFigure = fid;
+      renderTalkStrip(talkableCast);
+      $("talk-empty").hidden = true;
+      $("talk-panel").hidden = false;
+      setText("talk-with-label", "with " + (fid || "—"));
+      const card = (talkableCast || []).find((f) => f.id === fid) || { id: fid, short: fid };
+      const img = $("talk-portrait");
+      if (img) {
+        img.src = card.portrait || ("/static/portraits/" + fid + ".svg");
+        img.alt = card.short || fid;
+      }
+      setText("talk-name", card.short || card.name || fid);
+      setText("talk-role", card.role_label || card.note || "");
+      // Load OCEAN beside chat
+      try {
+        const data = await api("/api/profile?id=" + encodeURIComponent(fid));
+        const prof = data.profile || data;
+        const bf = (prof && prof.big_five) || {};
+        $("talk-ocean").innerHTML = OCEAN_KEYS.map(([k, lab]) =>
+          meterHtml(k, lab, bf[k], "talk-o")).join("");
+        if (prof && prof.role_label) setText("talk-role", prof.role_label + (prof.home_court ? " · " + prof.home_court : ""));
+        if (prof && !prof.talkable && prof.era_status && prof.era_status.status === "not_yet_risen") {
+          setText("talk-role", (prof.era_status.note || "Not yet risen") + "");
+        }
+      } catch (e) {
+        $("talk-ocean").innerHTML = "";
+      }
+    }
+
+    function closeTalkPanel() {
+      talkFigureId = null;
+      $("talk-panel").hidden = true;
+      $("talk-empty").hidden = false;
+      renderTalkStrip(talkableCast);
+    }
+
+function renderProfile(prof) {
+      if (!prof || prof.error) {
+        setText("prof-name", "—");
+        setText("prof-role", (prof && prof.error) || "Profile unavailable");
+        setText("prof-meta", "");
+        setText("prof-dossier", "");
+        setText("prof-intent", "—");
+        $("prof-ocean").innerHTML = "";
+        $("prof-state").innerHTML = "";
+        $("prof-bases").innerHTML = "";
+        $("prof-packets").innerHTML = "";
+        $("prof-weights").innerHTML = "";
+        $("prof-trust").innerHTML = "";
+        return;
+      }
+      const zh = prof.name_zh ? ` · ${prof.name_zh}` : "";
+      setText("prof-name", (prof.name || prof.id) + zh);
+      setText("prof-role", (prof.role_label || "") +
+        (prof.home_court ? ` · home court ${prof.home_court}` : ""));
+      setText("prof-meta",
+        `tick ${prof.tick ?? "—"} · ${prof.pathway_soft || "—"} · confidence ${prof.confidence || "—"}`);
+      setText("prof-dossier", prof.dossier || "");
+      const intent = prof.intention || {};
+      setText("prof-intent",
+        (intent.label || intent.current || "—") +
+        (intent.sticky_until != null ? ` · sticky_until ${intent.sticky_until}` : ""));
+
+      const bf = prof.big_five || {};
+      $("prof-ocean").innerHTML = OCEAN_KEYS.map(([k, lab]) =>
+        meterHtml(k, lab, bf[k], "o")).join("");
+
+      const st = prof.state || {};
+      $("prof-state").innerHTML = STATE_KEYS.map(([k, lab]) =>
+        meterHtml(k, lab, st[k], "s")).join("");
+
+      const bases = prof.base_schools || {};
+      $("prof-bases").innerHTML = BASE_KEYS.map(([k, lab]) =>
+        meterHtml(k, lab, bases[k] ?? 0, "b")).join("");
+
+      const weights = prof.packet_weights || {};
+      const packets = prof.packets || [];
+      $("prof-packets").innerHTML = packets.map((p) => {
+        const w = weights[p];
+        const pctW = Number.isFinite(Number(w)) ? ` ${Math.round(Number(w) * 100)}%` : "";
+        return `<span class="chip">${p}${pctW}</span>`;
+      }).join("") || `<span class="chip">none</span>`;
+
+      const weightEntries = Object.entries(weights).sort((a, b) => Number(b[1]) - Number(a[1]));
+      $("prof-weights").innerHTML = weightEntries.slice(0, 8).map(([k, v]) =>
+        meterHtml(k, k, v, "w")).join("");
+
+      const dyadic = prof.dyadic_trust || {};
+      const trustRows = Object.entries(dyadic).sort((a, b) => a[0].localeCompare(b[0])).slice(0, 12);
+      $("prof-trust").innerHTML = trustRows.length
+        ? trustRows.map(([k, v]) =>
+            `<span>${k}</span><span class="v">${Number(v).toFixed(2)}</span>`).join("")
+        : `<span>none</span><span class="v">—</span>`;
+    }
+
+    async function loadProfile(id) {
+      try {
+        const data = await api("/api/profile?id=" + encodeURIComponent(id || selectedFigure));
+        if (data.figures) renderFigureRadios(data.figures);
+        if (data.id) selectedFigure = data.id;
+        renderProfile(data.profile);
+        profileLoadedOnce = true;
+      } catch (e) {
+        renderProfile({ error: String(e.message || e) });
+      }
+    }
+
+    function agentMeter(id, ag) {
+      if (!ag) return;
+      const card = $("card-" + id);
+      const annexed = !!ag.annexed;
+      const desperate = !!ag.desperate;
+      if (card) {
+        card.classList.toggle("annexed", annexed);
+        card.classList.toggle("desperate", desperate && !annexed);
+        card.classList.toggle("optimizing", !annexed && !desperate && ag.stance_mode === "optimizing");
+      }
+      const nameEl = $("name-" + id);
+      if (nameEl) {
+        nameEl.textContent = annexed
+          ? ((ag.name || id) + " · ANNEXED")
+          : (ag.name || id);
+        nameEl.style.color = annexed ? "#c94a4a" : "";
+      }
+      let stance = ag.intention_label || ag.intention || "—";
+      if (annexed) stance = "Annexed";
+      else if (desperate) stance = (stance + " · Desperate");
+      else if (ag.stance_mode === "optimizing") stance = (stance + " · Optimizing");
+      setText("stance-" + id, stance);
+      const via = Number(ag.viability);
+      setText("v-" + id + "-via", Number.isFinite(via) ? Math.round(via) : "—");
+      bar("b-" + id + "-via", Number.isFinite(via) ? via / 100 : 0);
+      const g = Number(ag.grain), t = Number(ag.treasury);
+      const pool = Number(ag.resources);
+      setText("v-" + id + "-resrc",
+        (Number.isFinite(g) ? Math.round(g) : "—") + " / " +
+        (Number.isFinite(t) ? Math.round(t) : "—"));
+      bar("b-" + id + "-resrc", Number.isFinite(pool) ? pool / 100 : 0);
+      const y = Number(ag.geographic_yield);
+      setText("v-" + id + "-yield", Number.isFinite(y) ? (Math.round(y * 100) + "%") : "—");
+      bar("b-" + id + "-yield", Number.isFinite(y) ? y : 0);
+      const mil = Number(ag.military);
+      setText("v-" + id + "-mil", Number.isFinite(mil) ? (Math.round(mil * 100) + "%") : "—");
+      bar("b-" + id + "-mil", Number.isFinite(mil) ? mil : 0);
+      const techA = Number(ag.tech_adopt);
+      setText("v-" + id + "-tech", Number.isFinite(techA) ? (Math.round(techA * 100) + "%") : "—");
+      bar("b-" + id + "-tech", Number.isFinite(techA) ? techA : 0);
+      const res = ag.resentment ?? 0;
+      const fear = ag.fear_of_qin ?? 0;
+      setText("v-" + id + "-res", pct(res) + "%");
+      bar("b-" + id + "-res", res);
+      if (id !== "qin") {
+        setText("v-" + id + "-fear", pct(fear) + "%");
+        bar("b-" + id + "-fear", fear);
+      }
+    }
+
+    function stripMd(s) {
+      return String(s || "").replace(/\*\*/g, "");
+    }
+
+    function renderLog(chat, freshCount) {
+      const box = $("log");
+      const rows = chat || [];
+      const startFresh = Math.max(0, rows.length - (freshCount || 0));
+      box.innerHTML = rows.map((m, i) => {
+        const cls = i >= startFresh ? "entry fresh" : "entry";
+        return `<div class="${cls}">${stripMd(m.content)}</div>`;
+      }).join("");
+      box.scrollTop = box.scrollHeight;
+    }
+
+
+
+    function renderChronicle(s) {
+      setText("chronicle-mode", (s && s.chronicle_mode) || "stub");
+      const ta = $("chronicle-log");
+      if (ta) {
+        const lines = (s && s.chronicle_log) || [];
+        ta.value = lines.join("\n\n");
+        ta.scrollTop = ta.scrollHeight;
+      }
+    }
+
+    function renderCounsel(s, data) {
+      const mode = (s && s.counsel_mode) || (data && data.counsel_result && data.counsel_result.mode) || "stub";
+      setText("counsel-mode", mode);
+      const sess = (s && s.counsel_session) || {};
+      const cr = (data && data.counsel_result) || {};
+      const ex = cr.exchange != null ? cr.exchange : sess.exchanges;
+      const cap = sess.cap || 5;
+      const open = !!sess.open && !cr.closed;
+      setText("counsel-x", open ? ("x" + ex + "/" + cap) : (cr.closed ? "closed" : "idle"));
+      const focus = cr.figure_id || sess.figure_id || talkFigureId;
+      if (focus && focus !== talkFigureId) {
+        // keep side panel in sync when session already open
+        talkFigureId = focus;
+      }
+      if (talkFigureId) setText("talk-with-label", "with " + talkFigureId);
+      const ta = $("counsel-log");
+      if (ta) {
+        const lines = (s && s.counsel_log) || [];
+        ta.value = lines.join("\n");
+        ta.scrollTop = ta.scrollHeight;
+      }
+      const chips = (cr.prompt_chips) || (s && s.counsel_prompt_chips) || [];
+      const box = $("counsel-chips");
+      if (box) {
+        box.innerHTML = (chips || []).slice(0, 2).map((c) =>
+          `<button type="button" class="chip-btn" data-chip="${String(c).replace(/"/g, "&quot;")}">${c}</button>`
+        ).join("");
+        box.querySelectorAll("button.chip-btn").forEach((btn) => {
+          btn.onclick = () => {
+            const inp = $("counsel-prompt");
+            if (inp) inp.value = btn.getAttribute("data-chip") || btn.textContent || "";
+          };
+        });
+      }
+    }
+
+    function applyPayload(data, freshCount) {
+      const s = data.state || {};
+      const agents = s.agents || {};
+      setText("year", s.year ?? "—");
+      setText("qiy", s.quarter_in_year ?? "—");
+      setText("tick", s.tick ?? 0);
+      setText("pathway", s.pathway_soft || s.pathway || "—");
+      setText("qin-pressure", pct(s.qin_pressure) + (Number(s.qin_pressure) <= 1.001 ? "%" : ""));
+      // pressure often 0-100 already
+      const qp = Number(s.qin_pressure);
+      setText("qin-pressure", Number.isFinite(qp) ? (qp <= 1.001 ? pct(qp) + "%" : Math.round(qp * 10) / 10) : "—");
+      setText("cohesion", Number.isFinite(Number(s.alliance_cohesion)) ? (Math.round(Number(s.alliance_cohesion) * 10) / 10) : "—");
+      setText("shared", Number.isFinite(Number(s.shared_identity)) ? (Math.round(Number(s.shared_identity) * 10) / 10) : "—");
+
+      const ft = s.featured_trust || {};
+      setText("trust-line",
+        `chu→qi ${fmtT(ft["chu->qi"])} · qi→chu ${fmtT(ft["qi->chu"])}`);
+
+      const casc = $("cascade");
+      casc.textContent = s.cascade_armed ? "ARMED" : "idle";
+      casc.classList.toggle("on", !!s.cascade_armed);
+      const quo = $("quorum");
+      quo.textContent = s.quorum_ok ? "OK" : "fail";
+      quo.classList.toggle("on", !s.quorum_ok);
+
+      setText("who-vs", s.who_vs_qin || "—");
+
+      const sync = s.chu_sync || {};
+      const order = sync.order_parameter != null ? Number(sync.order_parameter) : null;
+      const bonded = Number(sync.bonded) >= 1;
+      setText("chu-sync",
+        order != null
+          ? (`order ${Math.round(order * 100) / 100}${bonded ? " · bonded" : ""}`)
+          : "—");
+
+      const m1 = s.m1 || {};
+      const fam = Number(m1.famine_shock);
+      const levy = Number(m1.levy_capacity);
+      setText("m1-line",
+        (Number.isFinite(fam) ? fam.toFixed(2) : "—") + " / " +
+        (Number.isFinite(levy) ? levy.toFixed(2) : "—"));
+
+      const adopt = Number(s.adoption_meter);
+      const adv = Number(s.qin_mil_advantage);
+      setText("m2-line",
+        (Number.isFinite(adopt) ? adopt.toFixed(2) : "—") + " / " +
+        (Number.isFinite(adv) ? ((adv >= 0 ? "+" : "") + adv.toFixed(2)) : "—"));
+
+      const sat = Number(s.satisfaction);
+      const mp = Number(s.available_manpower);
+      setText("demo-line",
+        (Number.isFinite(sat) ? sat.toFixed(2) : "—") + " / " +
+        (Number.isFinite(mp) ? mp.toFixed(2) : "—") + " (stub)");
+
+      setText("pc-val", Number.isFinite(Number(s.player_political_capital))
+        ? Math.round(Number(s.player_political_capital)) : "—");
+      setText("pt-val", Number.isFinite(Number(s.player_treasury))
+        ? Math.round(Number(s.player_treasury)) : "—");
+      renderAllianceFund(s, data);
+      const invLeft = Number(s.player_invest_actions_left);
+      const allLeft = Number(s.alliance_attempt_actions_left);
+      const intLeft = Number(s.intervene_actions_left);
+      const spent = Array.isArray(s.alliance_fund_spent_purposes)
+        ? s.alliance_fund_spent_purposes
+        : (Array.isArray(data.alliance_fund_spent_purposes) ? data.alliance_fund_spent_purposes : []);
+      const afLeft = Math.max(0, 4 - spent.length);
+      setText("invest-left", Number.isFinite(invLeft) ? Math.max(0, Math.round(invLeft)) : "—");
+      setText("alliance-left", Number.isFinite(allLeft) ? Math.max(0, Math.round(allLeft)) : "—");
+      setText("intervene-left", Number.isFinite(intLeft) ? Math.max(0, Math.round(intLeft)) : "—");
+      setText("af-left", afLeft);
+      if (Number.isFinite(invLeft)) lastBudget.invest = invLeft;
+      if (Number.isFinite(allLeft)) lastBudget.allianceAttempt = allLeft;
+      if (Number.isFinite(intLeft)) lastBudget.intervene = intLeft;
+      lastBudget.allianceFundSpent = spent.map((p) => String(p).toLowerCase());
+      syncBudgetButtons();
+      refreshInvestTargets(agents);
+      renderPlayerLog(s.player_log || []);
+
+      const reading = s.pathway_reading || "";
+      const wrap = $("pathway-reading-wrap");
+      if (reading) {
+        wrap.style.display = "block";
+        setText("pathway-reading", reading);
+      } else {
+        wrap.style.display = "none";
+        setText("pathway-reading", "—");
+      }
+
+      ensureFactionCards();
+      FIELD_IDS.forEach((id) => agentMeter(id, agents[id]));
+
+      if (data.dialogue) {
+        setText("dlg-speaker", data.dialogue.speaker || "Chronicler");
+        setText("dlg-line", data.dialogue.text || "");
+      }
+      renderLog(data.chat, freshCount);
+      if (s.talkable_cast) renderTalkStrip(s.talkable_cast);
+      renderChronicle(s);
+      renderCounsel(s, data);
+
+      const ended = $("ended");
+      if (s.run_ended && s.end_screen) {
+        ended.classList.add("show");
+        ended.textContent = typeof s.end_screen === "string"
+          ? s.end_screen
+          : (s.end_screen.title || s.end_screen.summary || JSON.stringify(s.end_screen));
+      } else {
+        ended.classList.remove("show");
+        ended.textContent = "";
+      }
+    }
+
+    function fmtT(v) {
+      if (v == null || !Number.isFinite(Number(v))) return "—";
+      const n = Number(v);
+      return (n <= 1.001 ? Math.round(n * 100) : Math.round(n)) + "";
+    }
+
+    async function api(path, opts) {
+      const res = await fetch(path, {
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        ...opts,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.error || ("HTTP " + res.status));
+      }
+      return data;
+    }
+
+    function syncBudgetButtons() {
+      const investGone = Number(lastBudget.invest) <= 0;
+      const allianceGone = Number(lastBudget.allianceAttempt) <= 0;
+      const interveneGone = Number(lastBudget.intervene) <= 0;
+      const spent = lastBudget.allianceFundSpent || [];
+      ["btn-fund", "btn-grain", "btn-mediate"].forEach((id) => {
+        const el = $(id);
+        if (el) el.disabled = busy || investGone;
+      });
+      const btnAll = $("btn-alliance");
+      if (btnAll) btnAll.disabled = busy || allianceGone;
+      const btnInt = $("btn-intervene");
+      if (btnInt) btnInt.disabled = busy || interveneGone;
+      const purposeBtn = {
+        tech: "btn-af-tech",
+        agriculture: "btn-af-agri",
+        construction: "btn-af-build",
+        military: "btn-af-mil",
+      };
+      Object.keys(purposeBtn).forEach((pur) => {
+        const el = $(purposeBtn[pur]);
+        if (el) el.disabled = busy || spent.indexOf(pur) >= 0;
+      });
+    }
+
+    function setBusy(on) {
+      busy = on;
+      ["btn-advance", "btn-new", "btn-save", "btn-load"].forEach((id) => {
+        const el = $(id);
+        if (el) el.disabled = on;
+      });
+      syncBudgetButtons();
+      $("status").textContent = on ? "Resolving…" : "";
+      $("status").classList.remove("err");
+    }
+
+    function renderPlayerLog(lines) {
+      const ta = $("player-log");
+      if (!ta) return;
+      const rows = lines || [];
+      ta.value = rows.length ? rows.join("\n") : "";
+      ta.scrollTop = ta.scrollHeight;
+    }
+
+    function showToast(msg, ms) {
+      const el = $("toast");
+      if (!el) return;
+      el.textContent = msg || "";
+      el.classList.add("show");
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => el.classList.remove("show"), ms || 2600);
+    }
+
+    function isSnap(obj) {
+      return obj && typeof obj === "object" && (obj.engine || obj.agents);
+    }
+
+    function readSlotsMap() {
+      try {
+        const raw = localStorage.getItem(LS_SLOTS_KEY);
+        if (!raw) return {};
+        const data = JSON.parse(raw);
+        if (!data || typeof data !== "object") return {};
+        const slots = data.slots && typeof data.slots === "object" ? data.slots : data;
+        const out = {};
+        Object.keys(slots).forEach((k) => {
+          if (isSnap(slots[k])) out[k] = slots[k];
+        });
+        return out;
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function writeSlotsMap(slots) {
+      try {
+        localStorage.setItem(LS_SLOTS_KEY, JSON.stringify({ version: 1, slots: slots || {} }));
+      } catch (_) {
+        /* quota / private mode */
+      }
+    }
+
+    function putLocalSlot(name, snap) {
+      if (!name || !isSnap(snap)) return;
+      const slots = readSlotsMap();
+      const copy = Object.assign({}, snap, { slot_name: name });
+      slots[name] = copy;
+      writeSlotsMap(slots);
+    }
+
+    function readSessionSave() {
+      try {
+        const raw = localStorage.getItem(LS_SESSION_KEY);
+        if (raw) {
+          const snap = JSON.parse(raw);
+          if (isSnap(snap)) return snap;
+        }
+      } catch (_) {}
+      // Migrate legacy single-key save into session (slots untouched)
+      try {
+        const legacy = localStorage.getItem(LS_LEGACY_KEY);
+        if (legacy) {
+          const snap = JSON.parse(legacy);
+          if (isSnap(snap)) {
+            writeSessionSave(snap);
+            return snap;
+          }
+        }
+      } catch (_) {}
+      return null;
+    }
+
+    function writeSessionSave(snap) {
+      if (!isSnap(snap)) return;
+      try {
+        localStorage.setItem(LS_SESSION_KEY, JSON.stringify(snap));
+      } catch (_) {}
+    }
+
+    function defaultSlotName(tick) {
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const stamp =
+        d.getFullYear() +
+        pad(d.getMonth() + 1) +
+        pad(d.getDate()) +
+        "-" +
+        pad(d.getHours()) +
+        pad(d.getMinutes());
+      return "campaign-t" + (tick != null ? tick : "?") + "-" + stamp;
+    }
+
+    async function autosaveToLocal() {
+      if (skipNextAutosave) {
+        skipNextAutosave = false;
+        return;
+      }
+      try {
+        // Session-only: does not create/overwrite named slots
+        const data = await api("/api/save", { method: "POST", body: "{}" });
+        if (data.snapshot) writeSessionSave(data.snapshot);
+      } catch (_) {
+        /* autosave best-effort */
+      }
+    }
+
+    function downloadSnapshot(snap, name) {
+      const tick = (snap && snap.tick != null) ? snap.tick : "0";
+      const base = (name || ("warring-states-save-t" + tick)).replace(/[^\w.\-]+/g, "_");
+      const blob = new Blob([JSON.stringify(snap, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = base.endsWith(".json") ? base : (base + ".json");
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function closeSlotPanel() {
+      const panel = $("slot-panel");
+      panel.classList.remove("open");
+      panel.setAttribute("aria-hidden", "true");
+    }
+
+    function openSlotPanel() {
+      renderSlotList();
+      const panel = $("slot-panel");
+      panel.classList.add("open");
+      panel.setAttribute("aria-hidden", "false");
+    }
+
+    function slotLabel(meta) {
+      const tick = meta.tick != null ? ("t" + meta.tick) : "t?";
+      const when = meta.saved_at ? String(meta.saved_at).replace("T", " ").replace("Z", "") : "";
+      return tick + (when ? " · " + when : "");
+    }
+
+    async function gatherSlots() {
+      const local = readSlotsMap();
+      const byName = {};
+      Object.keys(local).forEach((name) => {
+        const snap = local[name];
+        byName[name] = {
+          name,
+          source: "local",
+          tick: snap.tick,
+          saved_at: snap.saved_at,
+          snap,
+        };
+      });
+      try {
+        const data = await api("/api/saves");
+        (data.slots || []).forEach((row) => {
+          const name = row.name || row.id;
+          const prev = byName[name];
+          byName[name] = {
+            name,
+            id: row.id,
+            source: prev ? "both" : "server",
+            tick: row.tick != null ? row.tick : (prev && prev.tick),
+            saved_at: row.saved_at || (prev && prev.saved_at),
+            snap: prev && prev.snap,
+            serverId: row.id,
+          };
+        });
+      } catch (_) {
+        /* offline list = local only */
+      }
+      return Object.keys(byName)
+        .map((k) => byName[k])
+        .sort((a, b) => String(b.saved_at || "").localeCompare(String(a.saved_at || "")));
+    }
+
+    async function renderSlotList() {
+      const list = $("slot-list");
+      const empty = $("slot-empty");
+      list.innerHTML = "";
+      const rows = await gatherSlots();
+      empty.hidden = rows.length > 0;
+      rows.forEach((row) => {
+        const li = document.createElement("li");
+        const meta = document.createElement("div");
+        meta.className = "slot-meta";
+        const strong = document.createElement("strong");
+        strong.textContent = row.name;
+        const span = document.createElement("span");
+        span.textContent = slotLabel(row) + " · " + row.source;
+        meta.appendChild(strong);
+        meta.appendChild(span);
+        const btn = document.createElement("button");
+        btn.className = "cmd primary";
+        btn.type = "button";
+        btn.textContent = "Load";
+        btn.onclick = () => loadNamedSlot(row);
+        li.appendChild(meta);
+        li.appendChild(btn);
+        list.appendChild(li);
+      });
+    }
+
+    function loadNamedSlot(row) {
+      closeSlotPanel();
+      run("Load slot", async () => {
+        let data;
+        if (row.snap) {
+          data = await api("/api/load", { method: "POST", body: JSON.stringify(row.snap) });
+        } else {
+          data = await api("/api/load", {
+            method: "POST",
+            body: JSON.stringify({ slot: row.serverId || row.id || row.name }),
+          });
+        }
+        try {
+          const saved = await api("/api/save", { method: "POST", body: "{}" });
+          if (saved.snapshot) writeSessionSave(saved.snapshot);
+        } catch (_) {}
+        showToast("Loaded “" + row.name + "” · t" + ((data.state && data.state.tick) ?? "?"));
+        return data;
+      }, { skipAutosave: true });
+    }
+
+    async function run(label, fn, opts) {
+      if (busy) return;
+      const options = opts || {};
+      setBusy(true);
+      try {
+        const data = await fn();
+        const fresh = (data.new_lines && data.new_lines.length) || 0;
+        applyPayload(data, fresh);
+        $("status").textContent = label + " · ok";
+        // New Run must NOT clear named slots — only skip autosave if requested
+        if (!options.skipAutosave) await autosaveToLocal();
+        if (profileLoadedOnce || $("pane-profile").classList.contains("active")) {
+          loadProfile(selectedFigure);
+        }
+      } catch (e) {
+        $("status").textContent = String(e.message || e);
+        $("status").classList.add("err");
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    document.querySelectorAll(".tabs button").forEach((btn) => {
+      btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+    });
+    renderFigureRadios(null);
+
+    
+    $("btn-counsel").onclick = () => {
+      const prompt = ($("counsel-prompt") && $("counsel-prompt").value) || "";
+      if (!talkFigureId) {
+        $("status").textContent = "Pick a figure from the portrait strip first.";
+        $("status").classList.add("err");
+        return;
+      }
+      run("Counsel", () => api("/api/counsel", {
+        method: "POST",
+        body: JSON.stringify({ prompt, commit: false, figure_id: talkFigureId }),
+      }));
+    };
+    $("btn-counsel-close").onclick = () => {
+      const prompt = ($("counsel-prompt") && $("counsel-prompt").value) || "Close counsel: accept the hedge and decide.";
+      run("Counsel close", async () => {
+        const data = await api("/api/counsel", {
+          method: "POST",
+          body: JSON.stringify({ prompt, commit: true, figure_id: talkFigureId }),
+        });
+        if ($("counsel-prompt")) $("counsel-prompt").value = "";
+        return data;
+      });
+    };
+    if ($("btn-talk-clear")) {
+      $("btn-talk-clear").onclick = () => closeTalkPanel();
+    }
+
+    $("btn-advance").onclick = () => run("Advance", () => api("/api/advance", { method: "POST", body: "{}" }));
+    $("btn-alliance").onclick = () => run("Alliance", () => api("/api/alliance", { method: "POST", body: "{}" }));
+    $("btn-new").onclick = () => run(
+      "New run",
+      () => api("/api/new", { method: "POST", body: "{}" }),
+      { skipAutosave: true }
+    );
+    $("btn-intervene").onclick = () => run("Intervene", () => {
+      const targets = ["t-qin", "t-chu", "t-qi"]
+        .map((id) => $(id))
+        .filter((el) => el.checked)
+        .map((el) => el.value);
+      if (!targets.length) return Promise.reject(new Error("Pick Qin, Chu, and/or Qi"));
+      return api("/api/intervene", { method: "POST", body: JSON.stringify({ targets }) });
+    });
+    function investTarget() {
+      const sel = $("invest-target");
+      return (sel && sel.value) || "chu";
+    }
+    $("btn-fund").onclick = () => run("Fund Military", () =>
+      api("/api/fund_military", { method: "POST", body: JSON.stringify({ target: investTarget() }) }));
+    $("btn-grain").onclick = () => run("Send Grain", () =>
+      api("/api/send_grain", { method: "POST", body: JSON.stringify({ target: investTarget() }) }));
+    $("btn-mediate").onclick = () => run("Broker Mediation", () =>
+      api("/api/broker_mediation", { method: "POST", body: JSON.stringify({ target: investTarget() }) }));
+    async function spendAllianceFund(purpose, label) {
+      await run(label, async () => {
+        const spent = await api("/api/alliance_fund", {
+          method: "POST",
+          body: JSON.stringify({ purpose }),
+        });
+        // Re-fetch canonical state so joint-fund purse always matches engine
+        const fresh = await api("/api/state");
+        const g = (fresh.state && fresh.state.alliance_fund_grain != null)
+          ? fresh.state.alliance_fund_grain
+          : spent.alliance_fund_grain;
+        const t = (fresh.state && fresh.state.alliance_fund_treasury != null)
+          ? fresh.state.alliance_fund_treasury
+          : spent.alliance_fund_treasury;
+        const before = spent.alliance_fund_before || {};
+        showToast(
+          "Fund " + fmtFund(before.grain) + "/" + fmtFund(before.treasury) +
+          " → " + fmtFund(g) + "/" + fmtFund(t)
+        );
+        // Prefer fresh state payload for applyPayload
+        fresh.alliance_fund_grain = g;
+        fresh.alliance_fund_treasury = t;
+        fresh.alliance_fund_before = before;
+        return fresh;
+      });
+    }
+    $("btn-af-tech").onclick = () => spendAllianceFund("tech", "Fund→Tech");
+    $("btn-af-agri").onclick = () => spendAllianceFund("agriculture", "Fund→Agriculture");
+    $("btn-af-build").onclick = () => spendAllianceFund("construction", "Fund→Construction");
+    $("btn-af-mil").onclick = () => spendAllianceFund("military", "Fund→Military");
+
+    $("btn-save").onclick = () => {
+      // Peek tick for default name without mutating busy state yet
+      const tickEl = $("tick");
+      const tickHint = tickEl ? tickEl.textContent : "?";
+      const suggested = defaultSlotName(tickHint);
+      const existing = Object.keys(readSlotsMap());
+      const hint = existing.length
+        ? ("\nExisting slots (same name overwrites that slot only):\n- " + existing.slice(0, 8).join("\n- "))
+        : "";
+      const name = window.prompt("Save slot name:" + hint, suggested);
+      if (name == null) return;
+      const trimmed = String(name).trim();
+      if (!trimmed) {
+        $("status").textContent = "Save cancelled — name required";
+        $("status").classList.add("err");
+        return;
+      }
+      run("Save", async () => {
+        const data = await api("/api/save", {
+          method: "POST",
+          body: JSON.stringify({ name: trimmed }),
+        });
+        if (data.snapshot) {
+          putLocalSlot(trimmed, data.snapshot);
+          writeSessionSave(data.snapshot);
+          downloadSnapshot(data.snapshot, trimmed);
+          const overwritten = existing.indexOf(trimmed) >= 0;
+          showToast(
+            (overwritten ? "Overwrote" : "Saved") +
+              " “" + trimmed + "” · t" + (data.tick ?? "?")
+          );
+        }
+        return api("/api/state");
+      }, { skipAutosave: true });
+    };
+
+    $("btn-load").onclick = () => openSlotPanel();
+    $("btn-slot-close").onclick = () => closeSlotPanel();
+    $("slot-panel").addEventListener("click", (ev) => {
+      if (ev.target === $("slot-panel")) closeSlotPanel();
+    });
+    $("btn-load-file").onclick = () => {
+      closeSlotPanel();
+      $("load-file").click();
+    };
+    $("load-file").onchange = () => {
+      const file = $("load-file").files && $("load-file").files[0];
+      $("load-file").value = "";
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        let snap;
+        try { snap = JSON.parse(String(reader.result || "")); }
+        catch (e) {
+          $("status").textContent = "Invalid save file";
+          $("status").classList.add("err");
+          return;
+        }
+        const body = snap.snapshot || snap;
+        run("Load file", async () => {
+          const data = await api("/api/load", { method: "POST", body: JSON.stringify(body) });
+          writeSessionSave(body);
+          const slotName = (body.slot_name || file.name.replace(/\.json$/i, "") || "").trim();
+          if (slotName) putLocalSlot(slotName, body);
+          showToast("Loaded file · t" + ((data.state && data.state.tick) ?? "?"));
+          return data;
+        }, { skipAutosave: true });
+      };
+      reader.readAsText(file);
+    };
+
+    async function boot() {
+      const session = readSessionSave();
+      if (session) {
+        try {
+          skipNextAutosave = true;
+          await run("Restore", () =>
+            api("/api/load", { method: "POST", body: JSON.stringify(session) }),
+            { skipAutosave: true }
+          );
+          showToast("Restored session · t" + ((session.tick != null) ? session.tick : "?"));
+          await loadProfile(selectedFigure);
+          return;
+        } catch (e) {
+          /* keep named slots; drop only bad session blob */
+          try { localStorage.removeItem(LS_SESSION_KEY); } catch (_) {}
+        }
+      }
+      await run("Load", () => api("/api/state"), { skipAutosave: true });
+      await loadProfile(selectedFigure);
+    }
+    ensureFactionCards();
+    boot();
+  </script>
+</body>
+</html>
