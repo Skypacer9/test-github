@@ -717,7 +717,15 @@ def api_advance():
         return blocked
     st = _ensure()
     projected, msgs = advance_quarter(st)
-    return jsonify(_pack(projected, msgs))
+    pack = _pack(projected, msgs)
+    # Portrait dialogue: show this quarter's Chronicler line (not buried auto-counsel)
+    adv_dlg = projected.get("advance_dialogue")
+    if isinstance(adv_dlg, dict) and adv_dlg.get("text"):
+        pack["dialogue"] = {
+            "speaker": str(adv_dlg.get("speaker") or "Chronicler"),
+            "text": str(adv_dlg.get("text") or ""),
+        }
+    return jsonify(pack)
 
 
 @app.post("/api/intervene")

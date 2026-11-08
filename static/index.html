@@ -286,6 +286,12 @@
       border-bottom: 1px solid rgba(196,163,90,0.12); color: var(--ws-paper-dim); }
     .log .entry strong { color: var(--ws-gold); font-weight: 600; }
     .log .entry.fresh { color: var(--ws-paper); animation: flashIn 0.5s ease; }
+    .log .entry.chron {
+      color: var(--ws-gold-bright, #e8d5a3);
+      border-left: 2px solid rgba(166,124,82,0.55);
+      padding-left: 0.45rem;
+      margin-left: 0.1rem;
+    }
 
     .actions {
       margin-top: 1rem;
@@ -2326,8 +2332,10 @@ function renderProfile(prof) {
       box.replaceChildren();
       rows.forEach((m, i) => {
         const div = document.createElement("div");
-        div.className = i >= startFresh ? "entry fresh" : "entry";
-        div.textContent = stripMd(m && m.content);
+        const raw = String((m && m.content) || "");
+        const isChron = /\*\*Chronicler\*\*/i.test(raw) || /^Chronicler\b/i.test(stripMd(raw));
+        div.className = (i >= startFresh ? "entry fresh" : "entry") + (isChron ? " chron" : "");
+        div.textContent = stripMd(raw);
         box.appendChild(div);
       });
       box.scrollTop = box.scrollHeight;

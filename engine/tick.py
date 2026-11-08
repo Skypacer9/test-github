@@ -307,13 +307,14 @@ def tick(world: WorldState, *, apply_pending_shock: bool = True) -> WorldState:
     world.player_treasury = min(
         100.0, float(getattr(world, "player_treasury", 100.0)) + 2.0
     )
-    # Cultural chronicle (cadence / pathway change)
-    from .chronicle import maybe_write_chronicle
-    maybe_write_chronicle(world)
     # Auto figure counsel (one-shot decision close; tips dials only)
     if getattr(world, "counsel_auto", True) and not world.run_ended:
         from .counsel import run_counsel_round
         run_counsel_round(world, force_stub=False, player_initiated=False)
+    # Cultural chronicle LAST so Chronicler lands at the end of the quarterly log
+    # (previously buried under auto-counsel rows → looked like narration "skipped")
+    from .chronicle import maybe_write_chronicle
+    maybe_write_chronicle(world)
     soft_lock_if_needed(world)
     return world
 

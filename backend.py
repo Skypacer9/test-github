@@ -44,6 +44,9 @@ def _msg(role: str, content: str) -> dict[str, str]:
 def _speaker_line(rec: dict[str, Any]) -> tuple[str, str]:
     actor = str(rec.get("actor") or "world")
     text = str(rec.get("text") or "")
+    # Cultural chronicle rows always speak as Chronicler (actor may be chronicler/world)
+    if str(rec.get("event_id") or "") == "chronicle":
+        return "Chronicler", text
     names = {
         "qin": "Qin Court",
         "chu": "Chu Court",
@@ -53,6 +56,7 @@ def _speaker_line(rec: dict[str, Any]) -> tuple[str, str]:
         "wei": "Wei Court",
         "yan": "Yan Court",
         "world": "Chronicler",
+        "chronicler": "Chronicler",
     }
     return names.get(actor, actor.title()), text
 
@@ -332,7 +336,23 @@ def advance_quarter(raw: dict[str, Any] | None) -> tuple[dict[str, Any], list[di
     mark_opening_seen(world)
     before = len(world.episode)
     eng_tick(world)
-    return _project(world), _chat_from_new_logs(world, before)
+    projected = _project(world)
+    msgs = _chat_from_new_logs(world, before)
+    # Prefer the newest Chronicler line for the portrait dialogue plane
+    chron = next(
+        (
+            rec
+            for rec in reversed(world.episode[before:])
+            if rec.get("event_id") == "chronicle" and rec.get("text")
+        ),
+        None,
+    )
+    if chron:
+        projected["advance_dialogue"] = {
+            "speaker": "Chronicler",
+            "text": str(chron.get("text") or "")[:400],
+        }
+    return projected, msgs
 
 
 def intervene_chu(raw: dict[str, Any] | None) -> tuple[dict[str, Any], list[dict[str, str]]]:

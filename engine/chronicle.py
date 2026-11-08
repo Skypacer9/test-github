@@ -18,7 +18,8 @@ import re
 from typing import Any
 
 CHRONICLE_LOG_MAX = 30
-CHRONICLE_EVERY_N = 3
+# Every Advance writes a wry Shiji-style line (was 3 → felt like skips on most quarters).
+CHRONICLE_EVERY_N = 1
 
 _READING_NOTE = "One cultural reading among several — not a locked destiny."
 
