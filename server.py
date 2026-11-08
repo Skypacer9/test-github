@@ -2,8 +2,8 @@
 """Flask HTML frontend for the Warring States sim — thin wrapper over backend.py.
 
 Per-browser cookie sessions isolate campaigns. Bounded player/save quotas + TTL,
-request size caps, CSRF, optional WS_ACCESS_TOKEN. LLM stays hard-off unless
-explicitly gated (WS_LLM_ENABLED + key + access token or WS_LLM_ALLOW_ANON).
+request size caps, CSRF, optional WS_ACCESS_TOKEN (header/cookie only).
+LLM is opt-in (WS_LLM_ENABLED=1 + API key); all LLM paths share global+session caps.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, request, send_from_directory, session
+from flask import Flask, g, jsonify, request, send_from_directory, session
 
 from backend import (
     advance_quarter,
@@ -68,12 +68,29 @@ def _cookie_secure_default() -> bool:
     return True
 
 
+def _resolve_secret_key() -> str:
+    """Stable signing secret: env first, else persisted local file (not random each boot)."""
+    for key in ("WS_SECRET_KEY", "WS_SECRET", "FLASK_SECRET_KEY"):
+        val = (os.environ.get(key) or "").strip()
+        if val:
+            return val
+    # Soft local default — documented for lab/demo only; set WS_SECRET_KEY in production.
+    path = SAVES / ".flask_secret"
+    try:
+        SAVES.mkdir(parents=True, exist_ok=True)
+        if path.is_file():
+            existing = path.read_text(encoding="utf-8").strip()
+            if len(existing) >= 32:
+                return existing
+        val = secrets.token_hex(32)
+        path.write_text(val, encoding="utf-8")
+        return val
+    except OSError:
+        return secrets.token_hex(32)
+
+
 app = Flask(__name__, static_folder=str(STATIC), static_url_path="/static")
-app.secret_key = (
-    os.environ.get("WS_SECRET_KEY")
-    or os.environ.get("FLASK_SECRET_KEY")
-    or secrets.token_hex(32)
-)
+app.secret_key = _resolve_secret_key()
 app.config.update(
     SESSION_COOKIE_NAME="ws_field_session",
     SESSION_COOKIE_HTTPONLY=True,
@@ -95,20 +112,10 @@ def _access_token() -> str:
 
 
 def _llm_enabled() -> bool:
-    """LLM on when an API key is present unless WS_LLM_ENABLED explicitly disables it.
+    """Opt-in: WS_LLM_ENABLED=1|true|yes|on AND an API key. Default OFF."""
+    from engine.llm_gate import llm_env_enabled
 
-    Demo default: keys ⇒ on. Set WS_LLM_ENABLED=0 to force stub. Global+session
-    rate limits still apply; UI shows third-party disclosure when enabled.
-    """
-    flag = (os.environ.get("WS_LLM_ENABLED") or "1").strip().lower()
-    if flag in ("0", "false", "no", "off"):
-        return False
-    key = (
-        os.environ.get("WS_COUNSEL_API_KEY")
-        or os.environ.get("WS_CHRONICLE_API_KEY")
-        or ""
-    ).strip()
-    return bool(key)
+    return llm_env_enabled()
 
 
 def _safe_slot_id(name: str) -> str:
@@ -317,11 +324,16 @@ def _auth_gate() -> tuple[bool, str | None]:
     token = _access_token()
     if not token:
         return True, None
+    # Header / cookie only — never accept tokens from query strings (Referer/log leak).
     auth = request.headers.get("Authorization") or ""
     hdr = (request.headers.get("X-WS-Token") or "").strip()
-    q = (request.args.get("access_token") or "").strip()
+    cookie_tok = (request.cookies.get("ws_access_token") or "").strip()
     bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
-    if secrets.compare_digest(bearer, token) or secrets.compare_digest(hdr, token) or secrets.compare_digest(q, token):
+    if (
+        (bearer and secrets.compare_digest(bearer, token))
+        or (hdr and secrets.compare_digest(hdr, token))
+        or (cookie_tok and secrets.compare_digest(cookie_tok, token))
+    ):
         return True, None
     return False, "unauthorized"
 
@@ -496,6 +508,40 @@ def _touch_session():
         return None
     _player_id()
     return None
+
+
+@app.before_request
+def _bind_llm_admit():
+    """Attach global+session LLM budget to every API request (advance/tick/counsel/chronicle)."""
+    g._llm_admit_token = None
+    if not request.path.startswith("/api/"):
+        return None
+    if request.path == "/api/health":
+        return None
+    try:
+        from engine.llm_gate import set_llm_admit
+
+        b = _bucket()
+
+        def admit() -> bool:
+            return _rate_limit_llm(b) is None
+
+        g._llm_admit_token = set_llm_admit(admit)
+    except Exception:  # noqa: BLE001 — no session yet / capacity
+        g._llm_admit_token = None
+    return None
+
+
+@app.teardown_request
+def _clear_llm_admit(_exc: BaseException | None) -> None:
+    tok = getattr(g, "_llm_admit_token", None)
+    if tok is not None:
+        try:
+            from engine.llm_gate import reset_llm_admit
+
+            reset_llm_admit(tok)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 @app.errorhandler(413)
@@ -817,27 +863,16 @@ def api_counsel():
     if blocked:
         return blocked
     st = _ensure()
-    b = _bucket()
-    from engine.llm_gate import force_stub_llm
-
-    stub_token = None
-    if _llm_enabled():
-        llm_err = _rate_limit_llm(b)
-        if llm_err:
-            stub_token = force_stub_llm.set(True)
     body = request.get_json(silent=True) or {}
     prompt = body.get("prompt") or body.get("text") or ""
     commit = bool(body.get("commit") or body.get("close") or False)
     figure_id = body.get("figure_id") or body.get("figure") or None
     if figure_id is not None:
         figure_id = str(figure_id).strip().lower() or None
-    try:
-        projected, msgs, err, result = run_counsel(
-            st, prompt=str(prompt), commit=commit, figure_id=figure_id
-        )
-    finally:
-        if stub_token is not None:
-            force_stub_llm.reset(stub_token)
+    # LLM budget enforced inside counsel_llm/chronicle via admit_llm_call (same caps as tick).
+    projected, msgs, err, result = run_counsel(
+        st, prompt=str(prompt), commit=commit, figure_id=figure_id
+    )
     pack = _pack(projected, msgs)
     pack["counsel_result"] = projected.get("counsel_result") or result
     pack["talkable_cast"] = projected.get("talkable_cast")
@@ -902,7 +937,7 @@ def main() -> None:
     _ = initial_state
     print("Warring States HTML frontend (per-session isolation)")
     print(f"Open http://{host}:{port}/")
-    print(f"LLM enabled: {_llm_enabled()} (needs WS_LLM_ENABLED=1 + API key)")
+    print(f"LLM enabled: {_llm_enabled()} (opt-in: WS_LLM_ENABLED=1 + API key; default off)")
     print(
         "API: /api/state /api/new /api/saves /api/save /api/load /api/advance /api/intervene /api/alliance "
         "/api/alliance_fund /api/player_action /api/fund_military /api/send_grain "

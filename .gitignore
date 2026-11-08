@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 saves/*.json
+saves/.flask_secret
 !.gitkeep
 *.egg-info/
 .venv/

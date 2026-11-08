@@ -334,7 +334,12 @@ def stub_chronicle(world: Any, *, reason: str | None = None) -> str:
 
 
 def _llm_polish(draft: str, world: Any, pattern: dict[str, Any]) -> str | None:
+    from .llm_gate import admit_llm_call
+
     if chronicle_backend_name() != "llm":
+        return None
+    # Same global+session budget as counsel — deny ⇒ keep stub draft.
+    if not admit_llm_call():
         return None
     try:
         import json

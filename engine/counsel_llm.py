@@ -36,10 +36,10 @@ Rules: soft priors tip dials — do not rewrite PAS. No markdown fences if possi
 
 def complete_counsel_json(field_snapshot: str, *, prompt: str | None = None) -> str:
     """One batched completion → raw text (JSON list). Raises on hard failure."""
-    from .llm_gate import llm_env_enabled
+    from .llm_gate import admit_llm_call
 
-    if not llm_env_enabled():
-        raise RuntimeError("llm_disabled")
+    if not admit_llm_call():
+        raise RuntimeError("llm_denied")
     api_key = (os.environ.get("WS_COUNSEL_API_KEY") or "").strip()
     if not api_key:
         raise RuntimeError("no_api_key")
