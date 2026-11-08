@@ -1005,7 +1005,6 @@ def suggest_prompt_chips(world: Any, n: int = 2, figure_id: str | None = None) -
     the figure can answer, not cryptic slogans or mismatched court jargon.
     """
     sess = _ensure_session(world)
-    closing = sess.get("open") and int(sess.get("exchanges", 0)) >= DIALOGUE_MIN - 1
     focus = (figure_id or sess.get("figure_id") or "").strip().lower()
     atmosphere = is_atmosphere(focus)
     fig = get_figure(focus) if focus and not atmosphere else None
@@ -1018,9 +1017,8 @@ def suggest_prompt_chips(world: Any, n: int = 2, figure_id: str | None = None) -
     fear = float(getattr(getattr(ag, "state", None), "fear_of_qin", 0.0) or 0.0) if ag else 0.0
     resent = float(getattr(getattr(ag, "state", None), "resentment", 0.0) or 0.0) if ag else 0.0
 
-    if closing:
-        pool = ["Commit: contribute.", "Commit: withhold.", "Close counsel."]
-    elif atmosphere:
+    # Closing/commit lines stay on the Decide button — never hijack pressure chips.
+    if atmosphere:
         # Broadcast: pressure the whole living cast can hear
         pool = [
             "Speak to the field — every court still listening.",
@@ -1711,10 +1709,10 @@ def run_counsel_round(
     # Player dialogue — private 1:1, circle (several), or atmosphere broadcast
     left = int(getattr(world, "counsel_actions_left", 1))
     sess = _ensure_session(world)
-    ids_in = _norm_ids(figure_ids) or _norm_ids(sess.get("figure_ids"))
-    if not ids_in and (figure_id or sess.get("figure_id")):
-        ids_in = _norm_ids([figure_id or sess.get("figure_id")])
-    aud = resolve_audience(world, figure_id=figure_id or sess.get("figure_id"), figure_ids=ids_in)
+    ids_in = _norm_ids(figure_ids) or _norm_ids([figure_id] if figure_id else [])
+    if not ids_in and sess.get("open"):
+        ids_in = _norm_ids(sess.get("figure_ids")) or _norm_ids([sess.get("figure_id")])
+    aud = resolve_audience(world, figure_id=(ids_in[0] if len(ids_in) == 1 else figure_id), figure_ids=ids_in)
     focus = str(aud.get("figure_id") or "") or None
     channel = str(aud.get("channel") or "among_courts")
 
@@ -1751,7 +1749,24 @@ def run_counsel_round(
         sess["mode"] = aud.get("mode") or ""
         sess["channel"] = channel
     else:
-        # Stick to session audience once open
+        # Stick to session audience once open — reject cross-talk bleed into another private
+        open_channel = str(sess.get("channel") or "")
+        if channel and open_channel and channel != open_channel:
+            return {
+                "ok": False,
+                "mode": getattr(world, "counsel_mode", "stub"),
+                "rows": [],
+                "closed": False,
+                "error": (
+                    "Finish the open private counsel first (Decide or Back) "
+                    f"— sealed channel {open_channel}"
+                ),
+                "figure_id": sess.get("figure_id") or focus,
+                "figure_ids": list(sess.get("figure_ids") or []),
+                "channel": open_channel,
+                "talk_mode": sess.get("mode"),
+                "prompt_chips": suggest_prompt_chips(world, figure_id=sess.get("figure_id") or focus),
+            }
         aud = resolve_audience(
             world,
             figure_id=sess.get("figure_id"),

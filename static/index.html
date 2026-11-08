@@ -890,8 +890,8 @@
     #panel-quarterly .dialogue-box .line { font-size: 0.82rem; line-height: 1.3; }
     #panel-quarterly .log {
       flex: 1 1 0;
-      min-height: 4rem;
-      max-height: 28vh;
+      min-height: 3rem;
+      max-height: 14vh;
       overflow: auto;
       margin: 0 0 0.25rem;
       font-size: 0.72rem;
@@ -925,6 +925,11 @@
       border-top: 1px solid rgba(166,124,82,0.25);
       gap: 0.25rem;
       font-size: 0.65rem;
+      /* Keep Fund Military / Intervene spend in the first screen */
+      position: sticky;
+      bottom: 0;
+      background: linear-gradient(180deg, rgba(26,21,18,0.92), rgba(26,21,18,0.98));
+      z-index: 2;
     }
     #panel-quarterly .player-purse { font-size: 0.62rem; margin: 0.05rem 0; }
     #panel-quarterly .player-invest .cmd {
@@ -942,7 +947,7 @@
     #panel-quarterly .player-log-wrap {
       display: block;
       flex: 0 0 auto;
-      margin: 0 0 0.3rem;
+      margin: 0.25rem 0 0.2rem;
       padding: 0.25rem 0 0;
       border-top: 1px solid rgba(166,124,82,0.25);
       width: 100%;
@@ -955,9 +960,9 @@
     #panel-quarterly #player-log {
       display: block;
       width: 100%;
-      min-height: 5.5rem;
-      max-height: 8rem;
-      height: 6.5rem;
+      min-height: 3.2rem;
+      max-height: 5.5rem;
+      height: 4rem;
       resize: vertical;
       overflow: auto;
       font-size: 0.74rem;
@@ -1157,10 +1162,6 @@
           <div class="line" id="dlg-line">Connecting to the field…</div>
         </div>
         <div class="log" id="log" aria-live="polite"></div>
-        <div class="player-log-wrap">
-          <label for="player-log">Player Log · Shadow Actions</label>
-          <textarea id="player-log" readonly placeholder="Consequence lines and shadow attacks appear here…"></textarea>
-        </div>
 
         <div class="actions">
           <button class="cmd primary" id="btn-advance" type="button">Advance Quarter</button>
@@ -1203,6 +1204,10 @@
           <button class="cmd" id="btn-af-agri" type="button">Agriculture</button>
           <button class="cmd" id="btn-af-build" type="button">Construction</button>
           <button class="cmd" id="btn-af-mil" type="button">Military</button>
+        </div>
+        <div class="player-log-wrap">
+          <label for="player-log">Player Log · Shadow Actions</label>
+          <textarea id="player-log" readonly placeholder="Consequence lines and shadow attacks appear here…"></textarea>
         </div>
         <details class="more-logs">
           <summary>Cultural chronicle</summary>
@@ -1314,6 +1319,7 @@
     let profileLoadedOnce = false;
     let skipNextAutosave = false;
     let lastBudget = { invest: 1, allianceAttempt: 1, intervene: 1, allianceFundSpent: [] };
+    let lastCounselSession = { open: false, figure_id: "", channel: "", mode: "" };
 
     const OCEAN_KEYS = [
       ["openness", "Openness"],
@@ -1611,12 +1617,26 @@
     }
 
     async function openTalk(fid) {
+      // Block cross-talk bleed: an open private session stays sealed to that figure.
+      const openId = lastCounselSession && lastCounselSession.open ? (lastCounselSession.figure_id || "") : "";
+      const openMode = (lastCounselSession && lastCounselSession.mode) || "";
+      if (openId && openMode === "private" && fid && fid !== openId) {
+        if ($("status")) {
+          $("status").textContent = "Private talk with " + openId + " is still open — Decide or Back before speaking to someone else.";
+          $("status").classList.add("err");
+        }
+        fid = openId;
+      }
       talkFigureId = fid;
       selectedFigure = fid;
       switchTab("dialogue");
       renderTalkStrip(talkableCast);
       $("talk-empty").hidden = true;
       $("talk-panel").hidden = false;
+      // Clear prompt so prior pressure text does not bleed into another face
+      if ($("counsel-prompt") && openMode !== "private") $("counsel-prompt").value = "";
+      if ($("counsel-prompt") && openId && fid === openId) { /* keep */ }
+      else if ($("counsel-prompt") && (!openId || fid !== openId)) $("counsel-prompt").value = "";
       const isAtmo = fid === "atmosphere";
       setText("talk-with-label", isAtmo ? "with the atmosphere (all living)" : ("with private · " + (fid || "—")));
       const card = (talkableCast || []).find((f) => f.id === fid) || {
@@ -1638,6 +1658,12 @@
       }
       setText("talk-name", card.short || card.name || fid);
       setText("talk-role", card.role_label || card.note || "");
+      // If switching view with no open session for this face, blank the counsel log (no bleed)
+      if (!(lastCounselSession.open && lastCounselSession.figure_id === fid) && $("counsel-log")) {
+        if (!(lastCounselSession.open && lastCounselSession.mode === "private" && lastCounselSession.figure_id === fid)) {
+          if (!lastCounselSession.open) $("counsel-log").value = "";
+        }
+      }
       if (isAtmo) {
         $("talk-ocean").innerHTML = "";
         const hint = $("counsel-prompt");
@@ -1663,7 +1689,8 @@
           }
         }
         if (Array.isArray(prof.prompt_chips) && prof.prompt_chips.length) {
-          paintChips(prof.prompt_chips);
+          const safe = prof.prompt_chips.filter((c) => !/^Commit:/i.test(String(c)) && !/^Close counsel/i.test(String(c)));
+          paintChips(safe.length ? safe : prof.prompt_chips.slice(0, 2));
         }
       } catch (e) {
         $("talk-ocean").innerHTML = "";
@@ -1676,6 +1703,10 @@
 
     function closeTalkPanel() {
       talkFigureId = null;
+      lastCounselSession = { open: false, figure_id: "", channel: "", mode: "" };
+      if ($("counsel-log")) $("counsel-log").value = "";
+      if ($("counsel-prompt")) $("counsel-prompt").value = "";
+      paintChips([]);
       $("talk-panel").hidden = true;
       $("talk-empty").hidden = false;
       renderTalkStrip(talkableCast);
@@ -1846,17 +1877,22 @@ function renderProfile(prof) {
       const ex = cr.exchange != null ? cr.exchange : sess.exchanges;
       const cap = sess.cap || 5;
       const open = !!sess.open && !cr.closed;
+      lastCounselSession = {
+        open: open,
+        figure_id: String(sess.figure_id || cr.figure_id || ""),
+        channel: String(sess.channel || cr.channel || ""),
+        mode: String(sess.mode || cr.talk_mode || ""),
+      };
       setText("counsel-x", open ? ("x" + ex + "/" + cap) : (cr.closed ? "closed" : "idle"));
-      const focus = cr.figure_id || sess.figure_id || talkFigureId;
-      if (focus && focus !== talkFigureId) {
-        // keep side panel in sync when session already open
-        talkFigureId = focus;
+      // Only snap the strip selection to the sealed open session — never to a stale result
+      if (open && sess.figure_id && sess.mode === "private") {
+        talkFigureId = sess.figure_id;
       }
       if (talkFigureId) {
-        const mode = sess.mode || cr.talk_mode || "";
-        const label = mode === "atmosphere"
+        const talkMode = sess.mode || cr.talk_mode || "";
+        const label = talkMode === "atmosphere"
           ? "the atmosphere (all living)"
-          : mode === "circle"
+          : talkMode === "circle"
             ? ("circle · " + ((sess.figure_ids || cr.figure_ids || []).join(", ") || talkFigureId))
             : ("private · " + talkFigureId);
         setText("talk-with-label", "with " + label);
@@ -1880,7 +1916,9 @@ function renderProfile(prof) {
         ta.scrollTop = ta.scrollHeight;
       }
       const chips = (cr.prompt_chips) || (s && s.counsel_prompt_chips) || [];
-      paintChips(chips);
+      // Never let closing slogans replace live pressure chips
+      const filtered = (chips || []).filter((c) => !/^Commit:/i.test(String(c || "")) && !/^Close counsel/i.test(String(c || "")));
+      paintChips(filtered.length ? filtered : chips);
     }
 
     function applyPayload(data, freshCount) {
@@ -2377,7 +2415,27 @@ function renderProfile(prof) {
       });
     };
     if ($("btn-talk-clear")) {
-      $("btn-talk-clear").onclick = () => closeTalkPanel();
+      $("btn-talk-clear").onclick = () => {
+        // Abandon open sealed counsel so the next face cannot bleed into it
+        if (lastCounselSession.open && talkFigureId) {
+          run("Counsel leave", async () => {
+            try {
+              return await api("/api/counsel", {
+                method: "POST",
+                body: JSON.stringify({
+                  prompt: "Close counsel.",
+                  commit: true,
+                  figure_id: talkFigureId,
+                }),
+              });
+            } catch (e) {
+              return api("/api/state");
+            }
+          }, { skipAutosave: true }).finally(() => closeTalkPanel());
+          return;
+        }
+        closeTalkPanel();
+      };
     }
 
     $("btn-advance").onclick = () => run("Advance", () => api("/api/advance", { method: "POST", body: "{}" }));
