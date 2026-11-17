@@ -2341,7 +2341,7 @@
       const box = $("counsel-chips");
       if (!box) return;
       box.replaceChildren();
-      (chips || []).slice(0, 2).forEach((c) => {
+      (chips || []).slice(0, 4).forEach((c) => {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "chip-btn";
@@ -2468,7 +2468,7 @@
         }
         if (Array.isArray(prof.prompt_chips) && prof.prompt_chips.length) {
           const safe = prof.prompt_chips.filter((c) => !/^Commit:/i.test(String(c)) && !/^Close counsel/i.test(String(c)));
-          paintChips(safe.length ? safe : prof.prompt_chips.slice(0, 2));
+          paintChips(safe.length ? safe : prof.prompt_chips.slice(0, 4));
         }
       } catch (e) {
         $("talk-ocean").innerHTML = "";

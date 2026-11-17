@@ -243,6 +243,76 @@
         "vol078 春申君列傳 (full bio / succession intrigue — consult Wikisource; lightly represented in project excerpt pack)",
         "始皇本紀 六年: 韓、魏、趙、衛、楚共擊秦 (multi-state push context near Kaolie/Chunshen era)"
       ]
+    },
+    {
+      "id": "zhao-court-scaffold",
+      "name_zh": "",
+      "name_en": "Zhao court (northern scaffold)",
+      "role": "Zhao sovereign / northern anti-Qin court face (thin scaffold)",
+      "period_note": "Scaffold prior for Zhao among the seven states — northern defense, cavalry reputation, high threat under Qin sequential conquest. Not a single named psychobiography; design dials for seven-side play.",
+      "big_five": {"O": 0.45, "C": 0.62, "E": 0.48, "A": 0.42, "N": 0.65},
+      "justifications": {
+        "O": "Mid Openness: adapts cavalry/defense forms without Qin-scale institutional rewrite.",
+        "C": "Solid defensive Conscientiousness under northern pressure.",
+        "E": "Mid Extraversion: court gravity without Chunshen-level networking.",
+        "A": "Cautious coalition Agreeableness — joins when stakes clear.",
+        "N": "Elevated Neuroticism from Qin adjacency and conquest sequence fear."
+      },
+      "confidence": "scaffold",
+      "shiji_anchors": ["Zhao northern court under Qin sequential pressure (scaffold)"]
+    },
+    {
+      "id": "han-court-scaffold",
+      "name_zh": "",
+      "name_en": "Han court (corridor scaffold)",
+      "role": "Han sovereign / small corridor-state face (thin scaffold)",
+      "period_note": "Scaffold for Han — smallest of the seven, high vulnerability, mercantile caution. Design prior only.",
+      "big_five": {"O": 0.40, "C": 0.55, "E": 0.40, "A": 0.45, "N": 0.60},
+      "justifications": {
+        "O": "Lower Openness: survival within received forms.",
+        "C": "Mid Conscientiousness: careful levy of a small state.",
+        "E": "Lower Extraversion: limited interstate assertiveness.",
+        "A": "Mid Agreeableness: will contribute when protected.",
+        "N": "High-mid Neuroticism: corridor vulnerability to Qin."
+      },
+      "confidence": "scaffold",
+      "shiji_anchors": ["Han corridor state under Qin pressure (scaffold)"]
+    },
+    {
+      "id": "wei-xinling-scaffold",
+      "name_zh": "",
+      "name_en": "Wei Xinling court face (Four Lords scaffold)",
+      "role": "Wei coalition face (Xinling tradition) — horizontal alliance prior",
+      "period_note": "Scaffold blended from Four Lords / Xinling coalition tradition with Wei court. Higher E/A for hezong pull; not a full psychobiography.",
+      "big_five": {"O": 0.58, "C": 0.60, "E": 0.72, "A": 0.55, "N": 0.50},
+      "justifications": {
+        "O": "Open to multi-state relief architecture (Xinling+Chunshen tradition).",
+        "C": "Organizer Conscientiousness for joint relief marches.",
+        "E": "High Extraversion: Four Lords networking prior.",
+        "A": "Coalition Agreeableness tempered by Wei self-interest.",
+        "N": "Mid Neuroticism under Qin threat without Qi freeze."
+      },
+      "confidence": "scaffold",
+      "shiji_anchors": [
+        "vol073: Chunshen + Wei Xinling joint command tradition (scaffold face for Wei)"
+      ]
+    },
+    {
+      "id": "yan-court-scaffold",
+      "name_zh": "",
+      "name_en": "Yan court (northeast scaffold)",
+      "role": "Yan sovereign / far-northeast court face (thin scaffold)",
+      "period_note": "Scaffold for Yan — distance from Qin core, occasional bold strokes, thin dossier in this engine window.",
+      "big_five": {"O": 0.50, "C": 0.50, "E": 0.52, "A": 0.48, "N": 0.52},
+      "justifications": {
+        "O": "Mid Openness: opportunistic rather than institutional innovator.",
+        "C": "Mid Conscientiousness: uneven follow-through at distance.",
+        "E": "Mid Extraversion: can join strikes then fade.",
+        "A": "Mid Agreeableness toward peer coalitions.",
+        "N": "Mid Neuroticism: less Qi trauma freeze, less Qin predatory N."
+      },
+      "confidence": "scaffold",
+      "shiji_anchors": ["Yan northeast court in late Warring States (scaffold)"]
     }
   ]
 }

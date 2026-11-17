@@ -1066,11 +1066,13 @@ def _utter(
 
 
 
-def suggest_prompt_chips(world: Any, n: int = 2, figure_id: str | None = None) -> list[str]:
-    """Short field-pressure chips (≤2) keyed to focus figure + live field weather.
+def suggest_prompt_chips(world: Any, n: int = 4, figure_id: str | None = None) -> list[str]:
+    """Speak options from strategy bias + figure OCEAN + live board weather.
 
-    Player speaks as collective field pressure — chips should be plain pressure lines
-    the figure can answer, not cryptic slogans or mismatched court jargon.
+    Player speaks as collective field pressure. Chips are plain pressure lines
+    the focus figure can answer — shaped by decision_strategy (soft prior) and
+    that figure's Big Five, then gated by circumstance (pressure/cohesion/fear).
+    Closing/commit lines stay on Decide — never hijack these chips.
     """
     sess = _ensure_session(world)
     focus = (figure_id or sess.get("figure_id") or "").strip().lower()
@@ -1084,78 +1086,130 @@ def suggest_prompt_chips(world: Any, n: int = 2, figure_id: str | None = None) -
     cohesion = float(getattr(getattr(world, "meso", None), "cohesion", 50.0) or 50.0)
     fear = float(getattr(getattr(ag, "state", None), "fear_of_qin", 0.0) or 0.0) if ag else 0.0
     resent = float(getattr(getattr(ag, "state", None), "resentment", 0.0) or 0.0) if ag else 0.0
+    strat = str(
+        getattr(world, "decision_strategy", None)
+        or sess.get("strategy")
+        or ""
+    ).strip().lower() or "balanced"
+    ocean = _figure_ocean(fig, world) if fig else {"O": 0.5, "C": 0.5, "E": 0.5, "A": 0.5, "N": 0.5}
+    O, C, E, A, N = ocean["O"], ocean["C"], ocean["E"], ocean["A"], ocean["N"]
+    crisis = qin_p >= 72 and cohesion <= 42
+    fragile = qin_p >= 55 and cohesion <= 55
 
-    # Closing/commit lines stay on the Decide button — never hijack pressure chips.
+    pool: list[str] = []
+
+    # Strategy-flavored Speak options (soft prior — circumstance may override rank)
+    strat_lines = {
+        "hezong": [
+            "Press hezong — hold the anti-Qin line without fratricide.",
+            "Ask for contribute lean and joint grain, not peer war.",
+            "Cool Chu latency — keep the patron web answering.",
+        ],
+        "trust_builder": [
+            "Broker trust repair before any march order.",
+            "Mediation over thunder — who still owes face?",
+        ],
+        "qin_preempt": [
+            "Weigh a Qin front only if cohesion still holds.",
+            "Stage pressure west — patience, then one clean strike.",
+        ],
+        "peer_preempt": [
+            "Name the peer who frays the quorum — withhold or cut?",
+            "Peer preempt is costly under Qin weather — still worth it?",
+        ],
+        "preemptor": [
+            "Strike where resentment already burns — peer or Qin?",
+        ],
+        "develop": [
+            "Invest the quiet season — tech, grain, or construction?",
+            "Build capacity before banners; what still lacks fittings?",
+        ],
+        "fluid": [
+            "Re-read the board — hezong, develop, or cool Qin first?",
+            "Strategy is a bias only. What does this quarter demand?",
+        ],
+        "war_hawk": [
+            "If war is the lean, say which front and who pays the levy.",
+        ],
+        "isolationist": [
+            "Walls and time — what does isolation still buy?",
+        ],
+        "balanced": [
+            "Hold the coalition line without forcing a single ending.",
+        ],
+    }
+    pool.extend(strat_lines.get(strat, strat_lines["balanced"]))
+
+    # Circumstance overrides / additions (game-AI board read)
+    if crisis:
+        pool.append("Crisis meters — band together or lose the path?")
+        pool.append("Intervene and alliance first; peer war can wait.")
+    elif fragile:
+        pool.append("Fragile mid-band — repair cohesion before new fronts.")
+    if qin_p >= 55:
+        pool.append("Qin weather is loud — who still answers the field?")
+    if cohesion < 45:
+        pool.append("Cohesion frays. Repair the spokes, or accept the split?")
+
     if atmosphere:
-        # Broadcast: pressure the whole living cast can hear
-        pool = [
-            "Speak to the field — every court still listening.",
-            "What does this quarter ask of every living banner?",
-        ]
-        if qin_p >= 55:
-            pool.append("Qin weather is loud — who among you still answers?")
-        if cohesion < 45:
-            pool.append("Cohesion frays across courts. Repair or accept the split?")
-        qi = world.agents.get("qi")
-        if qi is not None and not getattr(qi, "annexed", False):
-            pool.append("Qi walls, Chu spokes, Qin fuse — name the next shared move.")
+        pool.append("Speak to the field — every living banner is listening.")
+        pool.append("What does this quarter ask of Qin, Chu, Qi, Zhao, Han, Wei, Yan?")
     elif focus and fig:
-        pool = []
-        # Role-shaped pressure (what you ask this person to weigh)
+        # OCEAN-shaped pressure (persona, not speech-bank decoration)
+        if A >= 0.55:
+            pool.append("Your agreeableness can hold a quorum — will you contribute?")
+        if N >= 0.6:
+            pool.append("Fear runs high here — withhold, or name what would calm it?")
+        if E >= 0.65:
+            pool.append("Use your reach — who else must hear this pressure?")
+        if O >= 0.55:
+            pool.append("Open a new form — tech, mediation, or a fresh pact?")
+        if C >= 0.7:
+            pool.append("Follow through: levy, guest-list, and one clear order.")
+        if A < 0.35 and home != "qin":
+            pool.append("Low trust lean — defect, withhold, or take a price?")
+
         if role == "ruler":
             pool.append("Hold your court's face without rushing the map.")
-            pool.append("Tell me what unity costs your people this season.")
         elif role == "minister":
             pool.append("Broker the next move with receipts, not banquet vows.")
-            pool.append("Where should the levy and guest-lists lean?")
         elif role == "retainer":
             pool.append("Will your clients still follow if the hub goes hungry?")
-            pool.append("Name the unpaid debt that still binds the spoke.")
-        else:
-            pool.append("Read the field: fittings and fords before banners.")
-            pool.append("What march order still makes sense this quarter?")
 
-        # Ideology / home-shaped — never push Legalist framing onto Chu
         if ideo == "chu_patronage_tianxia":
             pool.append("Keep the patron web intact under Qin weather.")
-            if fear >= 0.45 or qin_p >= 55:
-                pool.append("Qin pressure is loud — how do Chu spokes answer?")
         elif ideo == "qin_legalism":
             pool.append("Press staged pressure — patience over thunder.")
-            if cohesion < 45:
-                pool.append("Anti-Qin cohesion is soft. Exploit or wait?")
         elif ideo == "qi_mercantile":
             pool.append("Qi walls still hold — trade caution for time?")
-            pool.append("Isolation buys a season. What does it cost next?")
-        else:
-            pool.append("Speak to the field as it stands — no destiny script.")
+        elif home in ("zhao", "han", "wei", "yan"):
+            pool.append(f"Seven-side field: what does {home.title()} still owe the quorum?")
 
         if resent >= 0.5:
             pool.append("Resentment is hot here. Cool it, or let it cut?")
         if getattr(ag, "desperate", False):
             pool.append("Your court is desperate — what still can be saved?")
     else:
-        # Among-courts / no focus: general field pressure, still plain English
-        pool = [
-            "Hold the coalition line without forcing a single ending.",
-            "Ask what grain and trust still buy this quarter.",
-        ]
-        if qin_p >= 55:
-            pool.append("Qin pressure rises — who still answers the field?")
-        if cohesion < 45:
-            pool.append("Cohesion frays. Repair the spokes, or accept the split?")
-        qi = world.agents.get("qi")
-        if qi is not None and not getattr(qi, "annexed", False):
-            pool.append("Qi stays behind walls — press them, or leave them?")
+        pool.append("Ask what grain and trust still buy this quarter.")
 
-    # Dedupe while preserving sense; rank by tick so chips rotate
+    # Dedupe; rank by tick + strategy + OCEAN so chips rotate without locking
     seen: list[str] = []
     for s in pool:
         s = _strip_ui(s)[:72]
         if s and s not in seen:
             seen.append(s)
-    ranked = sorted(seen, key=lambda s: _seed_int(world.tick, sess.get("exchanges", 0), focus or "-", s))
-    return ranked[: max(1, min(2, n))]
+    ranked = sorted(
+        seen,
+        key=lambda s: _seed_int(
+            world.tick,
+            sess.get("exchanges", 0),
+            focus or "-",
+            strat,
+            f"A{A:.1f}N{N:.1f}",
+            s,
+        ),
+    )
+    return ranked[: max(1, min(4, int(n or 4)))]
 
 
 def _ensure_beliefs(world: Any) -> dict[str, dict[str, float]]:

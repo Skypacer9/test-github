@@ -4,6 +4,7 @@
 Per-browser cookie sessions isolate campaigns. Bounded player/save quotas + TTL,
 request size caps, CSRF, optional WS_ACCESS_TOKEN (header/cookie only).
 LLM is opt-in (WS_LLM_ENABLED=1 + API key); all LLM paths share global+session caps.
+Structured OCEAN decisions also need WS_LLM_DECISIONS=1 (heuristic fallback otherwise).
 """
 
 from __future__ import annotations
@@ -1104,7 +1105,13 @@ def main() -> None:
     _ = initial_state
     print("Warring States HTML frontend (per-session isolation)")
     print(f"Open http://{host}:{port}/")
+    from engine.llm_gate import llm_decisions_enabled
+
     print(f"LLM enabled: {_llm_enabled()} (opt-in: WS_LLM_ENABLED=1 + API key; default off)")
+    print(
+        f"LLM decisions: {llm_decisions_enabled()} "
+        "(also need WS_LLM_DECISIONS=1; else OCEAN heuristic acts)"
+    )
     print(
         "API: /api/state /api/new /api/saves /api/save /api/load /api/advance /api/intervene /api/alliance "
         "/api/alliance_fund /api/player_action /api/fund_military /api/send_grain "

@@ -182,6 +182,16 @@ def tick(world: WorldState, *, apply_pending_shock: bool = True) -> WorldState:
     world.recompute_meso()
     cohesion = world.meso.cohesion
 
+    # OCEAN figure decision phase (heuristic or LLM) → sticky court intentions.
+    # Acts land before PAS resolve so persona choices shape this quarter's
+    # trust / cohesion / pressure deltas via existing action paths.
+    try:
+        from .decision_agents import run_decision_phase
+
+        run_decision_phase(world)
+    except Exception:  # noqa: BLE001 — never block the quarter clock
+        pass
+
     actions = {}
     for ag in world.agents.values():
         if getattr(ag, "annexed", False):

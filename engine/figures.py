@@ -147,17 +147,92 @@ FIGURES: list[dict[str, Any]] = [
             "tianxia_da_yitong": 0.08,
         },
     },
+    # Seven-state scaffolds — OCEAN from JSON; thin dossiers (not fiction cast)
+    {
+        "id": "zhao_court",
+        "profile_id": "zhao-court-scaffold",
+        "home": "zhao",
+        "court_group": "Zhao court",
+        "role_label": "Zhao court (northern scaffold)",
+        "speech_role": "ruler",
+        "ui_profile": False,
+        "packet_bias": {
+            "lineage_shi": 0.30,
+            "tianxia_da_yitong": 0.25,
+            "ru_li": 0.20,
+            "huang_lao": 0.15,
+            "mohist_shangxian": 0.10,
+        },
+    },
+    {
+        "id": "han_court",
+        "profile_id": "han-court-scaffold",
+        "home": "han",
+        "court_group": "Han court",
+        "role_label": "Han court (corridor scaffold)",
+        "speech_role": "ruler",
+        "ui_profile": False,
+        "packet_bias": {
+            "guanzi": 0.28,
+            "lineage_shi": 0.25,
+            "tianxia_da_yitong": 0.22,
+            "ru_li": 0.15,
+            "huang_lao": 0.10,
+        },
+    },
+    {
+        "id": "xinling",
+        "profile_id": "wei-xinling-scaffold",
+        "home": "wei",
+        "court_group": "Wei court",
+        "role_label": "Wei Xinling face (Four Lords scaffold)",
+        "speech_role": "minister",
+        "ui_profile": False,
+        "packet_bias": {
+            "tianxia_da_yitong": 0.35,
+            "lineage_shi": 0.20,
+            "ru_li": 0.20,
+            "mohist_shangxian": 0.15,
+            "huang_lao": 0.10,
+        },
+    },
+    {
+        "id": "yan_court",
+        "profile_id": "yan-court-scaffold",
+        "home": "yan",
+        "court_group": "Yan court",
+        "role_label": "Yan court (northeast scaffold)",
+        "speech_role": "ruler",
+        "ui_profile": False,
+        "packet_bias": {
+            "tianxia_da_yitong": 0.28,
+            "lineage_shi": 0.25,
+            "ru_li": 0.20,
+            "dao_guodian": 0.15,
+            "huang_lao": 0.12,
+        },
+    },
 ]
+
+# Gradio Profile Radio stays at classic six; Flask / decisions use full FIGURES.
+PROFILE_RADIO_IDS: tuple[str, ...] = (
+    "kaolie",
+    "chunshen",
+    "chu_nobility",
+    "ying_zheng",
+    "li_si",
+    "king_jian",
+)
 
 # Legacy state-agent ids -> figure ids (NOT territorial fall)
 LEGACY_FIGURE_MAP: dict[str, str] = {
     "chu": "kaolie",
     "qin": "zhaoxiang",  # early-era Qin face; Zheng gated
     "qi": "king_jian",
-    "zhao": "kaolie",  # no dedicated figure yet — stay on a valid choice
-    "han": "kaolie",
-    "wei": "chunshen",
-    "yan": "chunshen",
+    "zhao": "zhao_court",
+    "han": "han_court",
+    "wei": "xinling",
+    "yan": "yan_court",
 }
 
 DEFAULT_FIGURE_ID = "kaolie"
@@ -182,8 +257,22 @@ def figure_label_map() -> dict[str, str]:
 
 
 def figure_dropdown_choices() -> list[tuple[str, str]]:
-    """(label, value) pairs — values are figure ids only (never bare 'chu')."""
-    return [(figure_label_for(f["id"]), f["id"]) for f in FIGURES]
+    """Gradio Profile Radio: classic six (never bare 'chu').
+
+    Full seven-state cast (incl. Zhao/Han/Wei/Yan scaffolds) remains in FIGURES
+    for Flask talkable faces + OCEAN decision agents.
+    """
+    known = {f["id"]: f for f in FIGURES}
+    out: list[tuple[str, str]] = []
+    for fid in PROFILE_RADIO_IDS:
+        if fid in known:
+            out.append((figure_label_for(fid), fid))
+    return out
+
+
+def decision_figure_ids() -> list[str]:
+    """All figure ids that may occupy the per-tick OCEAN action slot."""
+    return [f["id"] for f in FIGURES]
 
 
 def normalize_figure_id(fid: str | None) -> str:

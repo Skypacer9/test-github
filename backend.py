@@ -302,6 +302,9 @@ def _project(world: WorldState) -> dict[str, Any]:
             "channel": str((getattr(world, "counsel_session", None) or {}).get("channel") or ""),
         },
         "counsel_prompt_chips": suggest_prompt_chips(world),
+        "decision_strategy": str(getattr(world, "decision_strategy", "balanced") or "balanced"),
+        "field_ai": bool(getattr(world, "field_ai", False)),
+        "last_decision_phase": getattr(world, "last_decision_phase", None),
         "talkable_cast": _talkable_cast(world),
         "bce_year": abs(int(getattr(world, "year", -260))),
         "figure_beliefs": {
