@@ -1,9 +1,16 @@
-"""WS-64: OCEAN figure decisions → court acts → world deltas."""
+"""WS-64/66: OCEAN figure decisions → court acts → world deltas.
+
+Default path is rule-based (heuristic). Tests that exercise the LLM admission /
+mock-complete injection path are marked ``llm`` and skipped in CI unless
+``WS_RUN_LLM_TESTS=1``.
+"""
 
 from __future__ import annotations
 
 import json
 import os
+
+import pytest
 
 from engine.decision_agents import (
     apply_stance_decisions,
@@ -30,6 +37,7 @@ def setup_function() -> None:
     os.environ["WS_DECISION_MODE"] = "heuristic"
 
 
+@pytest.mark.rule
 def test_clamp_and_parse_schema():
     row = clamp_decision(
         {
@@ -51,12 +59,12 @@ def test_clamp_and_parse_schema():
     assert rows[0]["figure_id"] == "chunshen"
 
 
+@pytest.mark.rule
 def test_heuristic_ocean_decisions_apply_stance():
     w = new_world()
     rows = heuristic_decisions(w, strategy="hezong")
     assert rows
     assert all("stance" in r and "alliance_lean" in r for r in rows)
-    # Chu figures should exist and hezong should lean contribute for anti-Qin
     chu_rows = [r for r in rows if r["home"] == "chu"]
     assert chu_rows
     summary = apply_stance_decisions(w, rows)
@@ -64,6 +72,7 @@ def test_heuristic_ocean_decisions_apply_stance():
     assert w.agents["chu"].intention.sticky_until >= w.tick
 
 
+@pytest.mark.rule
 def test_tick_runs_decision_phase_without_api_key():
     w = new_world()
     p0 = float(w.qin_pressure)
@@ -71,28 +80,32 @@ def test_tick_runs_decision_phase_without_api_key():
     assert w.tick == 1
     phase = w.last_decision_phase
     assert isinstance(phase, dict)
-    assert phase.get("source") in ("heuristic", "mock")
+    # Rule-AI default: heuristic (mock only if WS_DECISION_MODE=mock)
+    assert phase.get("source") == "heuristic"
     assert "courts" in (phase.get("stance") or {})
-    # World still advances pressure via existing tick path
     assert float(w.qin_pressure) != p0 or w.meso.cohesion is not None
 
 
+@pytest.mark.rule
 def test_llm_decisions_gate_off_by_default():
     assert llm_decisions_enabled() is False
 
 
+@pytest.mark.rule
 def test_mock_mode_and_field_ai():
+    """Mock fixture path is still rule-shaped (no HTTP) — kept in default suite."""
     w = new_world()
     w.field_ai = True
     w.decision_strategy = "hezong"
     out = run_decision_phase(w, strategy="hezong", mode="mock", field_ai=True)
     assert out["source"] == "mock"
     assert out["stance"]["n_figures"] >= 1
-    # Field AI may or may not fire alliance depending on leans; phase recorded
     assert "field" in out
 
 
+@pytest.mark.llm
 def test_obtain_decisions_mock_complete_injection():
+    """Opt-in: exercises decision_llm mock completer + LLM gate env (no live HTTP)."""
     w = new_world()
 
     def _fake(_snap: str):
@@ -114,20 +127,19 @@ def test_obtain_decisions_mock_complete_injection():
     os.environ["WS_LLM_ENABLED"] = "1"
     os.environ["WS_LLM_DECISIONS"] = "1"
     os.environ["WS_COUNSEL_API_KEY"] = "test-not-real"
-    # admit_llm_call true outside Flask; complete_decisions_json uses mock first
     rows, src = obtain_decisions(w, strategy="hezong", mode="llm")
     assert src == "llm"
     assert any(r["figure_id"] == "chunshen" for r in rows)
     set_mock_complete(None)
 
 
+@pytest.mark.rule
 def test_mock_llm_strategy_signatures():
     w = new_world()
     hez = mock_llm_decisions(w, strategy="hezong")
     assert all(str(r["rationale_tag"]).startswith("mock:") for r in hez)
     anti = [r for r in hez if r["home"] != "qin"]
     assert anti
-    # Soft prior: hezong raises alliance lean vs peer_preempt — not a rigid script
     peer = mock_llm_decisions(w, strategy="peer_preempt")
     hez_ally = sum(float(r["alliance_lean"]) for r in hez if r["home"] != "qin") / len(anti)
     peer_ally = sum(float(r["alliance_lean"]) for r in peer if r["home"] != "qin") / max(
@@ -136,6 +148,7 @@ def test_mock_llm_strategy_signatures():
     assert hez_ally > peer_ally
 
 
+@pytest.mark.rule
 def test_circumstance_crisis_raises_alliance():
     from engine.decision_agents import board_situation, heuristic_decisions
 
@@ -151,6 +164,7 @@ def test_circumstance_crisis_raises_alliance():
     assert crisis_a > calm_a
 
 
+@pytest.mark.rule
 def test_seven_state_figure_decisions():
     from engine.decision_agents import heuristic_decisions
 
@@ -161,6 +175,7 @@ def test_seven_state_figure_decisions():
     assert len(rows) >= 7
 
 
+@pytest.mark.rule
 def test_speak_chips_strategy_ocean():
     from engine.counsel import suggest_prompt_chips
 
@@ -170,3 +185,11 @@ def test_speak_chips_strategy_ocean():
     assert 1 <= len(chips) <= 4
     blob = " ".join(chips).lower()
     assert "hezong" in blob or "contribute" in blob or "patron" in blob or "coalition" in blob
+
+
+@pytest.mark.rule
+def test_obtain_decisions_defaults_to_heuristic():
+    w = new_world()
+    rows, src = obtain_decisions(w, strategy="balanced", mode="auto")
+    assert src == "heuristic"
+    assert rows

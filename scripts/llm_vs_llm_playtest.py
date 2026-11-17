@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""WS-65: LLM-shaped (or mock) decision agents adopt strategies vs heuristic MC priors.
+"""WS-65/66 strategy playtest — defaults to rule-based (heuristic) AI.
 
+  # Default (CI-safe): heuristic OCEAN decisions, no LLM HTTP
   python3 scripts/llm_vs_llm_playtest.py
-  python3 scripts/llm_vs_llm_playtest.py --mode mock --n 8 --horizon 40
+  python3 scripts/llm_vs_llm_playtest.py --mode heuristic --n 8 --horizon 40
+
+  # Fixture path (still no HTTP):
+  python3 scripts/llm_vs_llm_playtest.py --mode mock
+
+  # Live LLM (opt-in):
   WS_LLM_DECISIONS=1 WS_LLM_ENABLED=1 WS_COUNSEL_API_KEY=… \\
     python3 scripts/llm_vs_llm_playtest.py --mode llm --n 4 --horizon 24
 
@@ -29,8 +35,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--mode",
         choices=("auto", "mock", "heuristic", "llm"),
-        default="auto",
-        help="decision source (auto→llm if gated else mock)",
+        default="heuristic",
+        help="decision source (default: heuristic / rule-AI; llm is opt-in)",
     )
     p.add_argument(
         "--strategies",
@@ -45,22 +51,32 @@ def main(argv: list[str] | None = None) -> int:
 
     mode = args.mode
     live_blocked = False
+    # Prefer rule-AI unless explicitly asking for llm/auto with gates on.
+    rule_default = (os.environ.get("WS_PLAYTEST_RULE_AI") or "1").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+        "",
+    )
     if mode == "auto":
-        if llm_decisions_enabled():
+        if llm_decisions_enabled() and not rule_default:
             mode = "llm"
         else:
-            mode = "mock"
-            live_blocked = True
+            mode = "heuristic"
+            live_blocked = not llm_decisions_enabled()
     elif mode == "llm" and not llm_decisions_enabled():
         print(
             "LIVE LLM blocked: need WS_LLM_DECISIONS=1 + WS_LLM_ENABLED=1 + "
-            "WS_COUNSEL_API_KEY. Falling back to mock fixtures.",
+            "WS_COUNSEL_API_KEY. Falling back to heuristic (rule-AI).",
             file=sys.stderr,
         )
-        mode = "mock"
+        mode = "heuristic"
         live_blocked = True
-    if not api_key_present():
+    if mode == "llm" and not api_key_present():
         live_blocked = True
+    if mode in ("heuristic", "mock"):
+        live_blocked = live_blocked or not api_key_present()
 
     result = monte_carlo_strategies(
         list(args.strategies),
