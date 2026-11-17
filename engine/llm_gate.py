@@ -14,6 +14,19 @@ force_stub_llm: ContextVar[bool] = ContextVar("force_stub_llm", default=False)
 _llm_admit: ContextVar[Callable[[], bool] | None] = ContextVar("llm_admit", default=None)
 
 
+def _truthy(name: str, default: str = "0") -> bool:
+    return (os.environ.get(name) or default).strip().lower() in ("1", "true", "yes", "on")
+
+
+def api_key_present() -> bool:
+    key = (
+        os.environ.get("WS_COUNSEL_API_KEY")
+        or os.environ.get("WS_CHRONICLE_API_KEY")
+        or ""
+    ).strip()
+    return bool(key)
+
+
 def llm_env_enabled() -> bool:
     """Opt-in only: requires WS_LLM_ENABLED=1|true|yes|on AND an API key.
 
@@ -21,15 +34,22 @@ def llm_env_enabled() -> bool:
     """
     if force_stub_llm.get():
         return False
-    flag = (os.environ.get("WS_LLM_ENABLED") or "0").strip().lower()
-    if flag not in ("1", "true", "yes", "on"):
+    if not _truthy("WS_LLM_ENABLED"):
         return False
-    key = (
-        os.environ.get("WS_COUNSEL_API_KEY")
-        or os.environ.get("WS_CHRONICLE_API_KEY")
-        or ""
-    ).strip()
-    return bool(key)
+    return api_key_present()
+
+
+def llm_decisions_enabled() -> bool:
+    """Structured OCEAN→action decisions via LLM (separate from counsel prose).
+
+    Requires WS_LLM_DECISIONS=1 AND WS_LLM_ENABLED=1 AND an API key.
+    Heuristic decision agents always remain the fallback when this is off.
+    """
+    if force_stub_llm.get():
+        return False
+    if not _truthy("WS_LLM_DECISIONS"):
+        return False
+    return llm_env_enabled()
 
 
 def set_llm_admit(fn: Callable[[], bool] | None):

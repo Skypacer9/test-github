@@ -157,6 +157,13 @@ class WorldState:
     chronicle_log: list[str] = field(default_factory=list)
     chronicle_mode: str = "stub"
     last_chronicle_pathway: str | None = None
+    # OCEAN decision agents (WS-64): persona acts → court deltas; Field AI optional
+    decision_strategy: str = "balanced"
+    field_ai: bool = False
+    last_figure_decisions: list[dict[str, Any]] = field(default_factory=list)
+    last_decision_summary: dict[str, Any] | None = None
+    last_decision_phase: dict[str, Any] | None = None
+    last_field_ai: dict[str, Any] | None = None
 
     def ensure_baselines(self) -> None:
         if not self.faction_baseline:
@@ -391,6 +398,13 @@ class WorldState:
             "chronicle_log": list(self.chronicle_log or []),
             "chronicle_mode": str(self.chronicle_mode or "stub"),
             "last_chronicle_pathway": self.last_chronicle_pathway,
+            "decision_strategy": str(self.decision_strategy or "balanced"),
+            "field_ai": bool(self.field_ai),
+            "last_decision_phase": (
+                dict(self.last_decision_phase)
+                if isinstance(self.last_decision_phase, dict)
+                else None
+            ),
         }
 
     @classmethod
@@ -531,6 +545,13 @@ class WorldState:
             chronicle_log=list(raw.get("chronicle_log") or []),
             chronicle_mode=str(raw.get("chronicle_mode") or "stub"),
             last_chronicle_pathway=raw.get("last_chronicle_pathway"),
+            decision_strategy=str(raw.get("decision_strategy") or "balanced"),
+            field_ai=_coerce_flag(raw.get("field_ai", False), False),
+            last_decision_phase=(
+                dict(raw["last_decision_phase"])
+                if isinstance(raw.get("last_decision_phase"), dict)
+                else None
+            ),
         )
         if not ws.trust:
             ws.trust = default_trust_matrix(list(ws.agents.keys()))
