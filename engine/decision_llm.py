@@ -17,8 +17,11 @@ from typing import Any, Callable
 _mock_complete: Callable[[str], Any] | None = None
 
 SYSTEM_PROMPT = """Warring States figure decision layer (actions, not speech).
-Each figure acts from Big Five (OCEAN) + role + memory + world meters.
-Return ONLY a JSON list of objects (one per figure_id in the snapshot). Schema:
+Act like a game AI: strategy in the snapshot is a SOFT PRIOR / bias only — respond to
+board circumstances each tick (qin_pressure, cohesion, grain, fronts, betrayal,
+chu latency/sts). Do NOT always-do-X for a strategy label.
+Each figure: Big Five (OCEAN) + role + memory + board line.
+Return ONLY JSON {\"decisions\":[...]} (one object per figure_id). Schema:
 {"figure_id":str,"home":str,
  "stance":"contribute"|"withhold"|"defect",
  "alliance_lean":0..1,
@@ -27,8 +30,10 @@ Return ONLY a JSON list of objects (one per figure_id in the snapshot). Schema:
  "invest_target":"chu"|"qi"|"zhao"|"han"|"wei"|"yan"|"none",
  "intervene_pref":"none"|"chu"|"qi"|"qin",
  "rationale_tag":"<=24 chars"}
-Rules: OCEAN drives stance (high A→contribute; high N→withhold; low A+threat→defect).
-Qin figures lean defect/offensive. No markdown. English tags only. No Chinese."""
+Rules: high A→contribute; high N→withhold; low A+threat→defect.
+Crisis (high P, low C): prefer alliance/contribute/intervene even if war-biased.
+Low grain / open fronts: avoid new peer war; invest agriculture or mediation.
+Qin figures lean defect/offensive. No markdown. English only. No Chinese."""
 
 
 def set_mock_complete(fn: Callable[[str], Any] | None) -> None:

@@ -126,4 +126,47 @@ def test_mock_llm_strategy_signatures():
     hez = mock_llm_decisions(w, strategy="hezong")
     assert all(str(r["rationale_tag"]).startswith("mock:") for r in hez)
     anti = [r for r in hez if r["home"] != "qin"]
-    assert anti and all(r["stance"] == "contribute" for r in anti)
+    assert anti
+    # Soft prior: hezong raises alliance lean vs peer_preempt — not a rigid script
+    peer = mock_llm_decisions(w, strategy="peer_preempt")
+    hez_ally = sum(float(r["alliance_lean"]) for r in hez if r["home"] != "qin") / len(anti)
+    peer_ally = sum(float(r["alliance_lean"]) for r in peer if r["home"] != "qin") / max(
+        1, len([r for r in peer if r["home"] != "qin"])
+    )
+    assert hez_ally > peer_ally
+
+
+def test_circumstance_crisis_raises_alliance():
+    from engine.decision_agents import board_situation, heuristic_decisions
+
+    calm = new_world()
+    crisis = new_world()
+    crisis.qin_pressure = 85.0
+    crisis.meso.cohesion = 30.0
+    assert board_situation(crisis)["crisis"] is True
+    calm_rows = heuristic_decisions(calm, strategy="peer_preempt")
+    crisis_rows = heuristic_decisions(crisis, strategy="peer_preempt")
+    calm_a = sum(float(r["alliance_lean"]) for r in calm_rows if r["home"] != "qin")
+    crisis_a = sum(float(r["alliance_lean"]) for r in crisis_rows if r["home"] != "qin")
+    assert crisis_a > calm_a
+
+
+def test_seven_state_figure_decisions():
+    from engine.decision_agents import heuristic_decisions
+
+    w = new_world()
+    rows = heuristic_decisions(w, strategy="hezong")
+    homes = {r["home"] for r in rows}
+    assert homes >= {"qin", "chu", "qi", "zhao", "han", "wei", "yan"}
+    assert len(rows) >= 7
+
+
+def test_speak_chips_strategy_ocean():
+    from engine.counsel import suggest_prompt_chips
+
+    w = new_world()
+    w.decision_strategy = "hezong"
+    chips = suggest_prompt_chips(w, n=4, figure_id="chunshen")
+    assert 1 <= len(chips) <= 4
+    blob = " ".join(chips).lower()
+    assert "hezong" in blob or "contribute" in blob or "patron" in blob or "coalition" in blob

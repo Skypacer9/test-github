@@ -32,7 +32,10 @@ STATE_PROFILE_MAP: dict[str, list[str]] = {
     "qin": ["qin-zhaoxiang", "qin-ying-zheng"],  # Zhaoxiang early-era face; Zheng later
     "chu": ["chu-king-kaolie", "chu-king-you", "chu-nobility-faction"],  # You = post-238 weak successor  # court + aristocratic drag
     "qi": ["qi-king-jian-isolationist-court"],
-    # Zhao/Han/Wei/Yan: no named JSON rows yet — scaffold mid priors (not fiction cast)
+    "zhao": ["zhao-court-scaffold"],
+    "han": ["han-court-scaffold"],
+    "wei": ["wei-xinling-scaffold"],
+    "yan": ["yan-court-scaffold"],
 }
 
 # Optional advisor overlays (not separate state agents in MVP meso field)

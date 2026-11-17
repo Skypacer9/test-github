@@ -71,6 +71,26 @@ HISTORICAL_PRIORS: dict[str, tuple[str, ...]] = {
         "Guanzi books price coalitions — hymns do not.",
         "Betrayal memory sticks harder than any Qin smile.",
     ),
+    "zhao_court": (
+        "Northern fords remember Qin sequential weather.",
+        "Cavalry holds a season; quorum holds a path.",
+        "Join when the levy still answers — not after.",
+    ),
+    "han_court": (
+        "A corridor state lives by timing, not thunder.",
+        "Contribute when sheltered; withhold when alone.",
+        "Qin maps eat small courts first.",
+    ),
+    "xinling": (
+        "Four Lords still mean horizontal relief, not banquet fog.",
+        "Chunshen's joint marches taught receipts over vows.",
+        "Wei face rises when peers still breathe.",
+    ),
+    "yan_court": (
+        "Northeast distance is not safety forever.",
+        "Strike once, then count the roads home.",
+        "Quorum talk reaches late — answer earlier.",
+    ),
 }
 
 
